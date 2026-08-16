@@ -1,0 +1,13 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Rendered videos live at videos/{uid}/{visualizationId}.mp4
+    // - The owner may read their own videos.
+    // - Only the render worker (Admin SDK) writes them; clients cannot upload.
+    match /videos/{uid}/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+  }
+}

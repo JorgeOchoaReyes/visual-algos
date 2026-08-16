@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Visualizations are owned by the user who created them.
+    // - Clients may read/list/delete their own docs.
+    // - Clients may NOT create or mutate docs directly; the callable Cloud
+    //   Function (running with admin privileges) is the only writer. This keeps
+    //   generated Manim code and render status trustworthy.
+    match /visualizations/{visualizationId} {
+      allow read: if request.auth != null
+                  && resource.data.ownerId == request.auth.uid;
+
+      allow delete: if request.auth != null
+                    && resource.data.ownerId == request.auth.uid;
+
+      // Block all client writes. The Function + render worker use the Admin SDK,
+      // which bypasses these rules.
+      allow create, update: if false;
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "visual-algos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn a CS-algorithm topic into a 3Blue1Brown-style Manim video, powered by Gemini + Firebase.",
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
+    "build:functions": "npm --prefix functions run build",
+    "install:all": "npm install && npm --prefix web install && npm --prefix functions install",
+    "emulators": "firebase emulators:start",
+    "deploy": "npm run build:functions && firebase deploy",
+    "deploy:rules": "firebase deploy --only firestore:rules,storage",
+    "deploy:functions": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

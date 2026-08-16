@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+web/.next/
+web/out/
+web/build/
+
+# Production
+build/
+dist/
+functions/lib/
+
+# Env files
+.env
+.env*.local
+.env.local
+functions/.env
+functions/.env.*
+render-worker/.env
+!.env.example
+!**/.env.example
+!**/.env.local.example
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+.firebaserc
+
+# Python / render-worker
+__pycache__/
+*.py[cod]
+render-worker/.venv/
+render-worker/media/
+render-worker/*.mp4
+
+# Misc
+.DS_Store
+*.pem
+.vscode/
+.idea/
+coverage/
+*.log
+npm-debug.log*

@@ -1,0 +1,7 @@
+# Web + Firebase deps for the render worker.
+# `manim` itself is provided by the manimcommunity base image in the Dockerfile;
+# it is listed here for local (non-Docker) development via `pip install -r`.
+flask==3.0.3
+gunicorn==22.0.0
+firebase-admin==6.5.0
+manim==0.18.1
