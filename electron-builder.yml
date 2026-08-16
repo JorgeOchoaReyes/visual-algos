@@ -1,0 +1,22 @@
+appId: com.visualalgos.app
+productName: Visual Algos
+directories:
+  buildResources: build
+  output: dist
+files:
+  - "out/**/*"
+  - "package.json"
+asarUnpack:
+  - "resources/**"
+mac:
+  category: public.app-category.education
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+  category: Education

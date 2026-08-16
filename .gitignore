@@ -1,50 +1,28 @@
 # Dependencies
 node_modules/
-**/node_modules/
-.pnp
-.pnp.js
 
-# Next.js
-web/.next/
-web/out/
-web/build/
+# electron-vite build output
+out/
 
-# Production
-build/
+# electron-builder output
 dist/
-functions/lib/
 
-# Env files
+# Env / secrets
 .env
 .env*.local
-.env.local
-functions/.env
-functions/.env.*
-render-worker/.env
-!.env.example
-!**/.env.example
-!**/.env.local.example
 
-# Firebase
-.firebase/
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
-*-debug.log
-.firebaserc
-
-# Python / render-worker
-__pycache__/
-*.py[cod]
-render-worker/.venv/
-render-worker/media/
-render-worker/*.mp4
-
-# Misc
-.DS_Store
-*.pem
-.vscode/
-.idea/
-coverage/
+# Logs
 *.log
 npm-debug.log*
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Python venv created by the managed-install helper (also lives in userData at
+# runtime, but ignore any local one just in case)
+.venv/
+
+# TS incremental build info
+*.tsbuildinfo

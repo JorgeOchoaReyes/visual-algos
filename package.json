@@ -2,16 +2,36 @@
   "name": "visual-algos",
   "version": "0.1.0",
   "private": true,
-  "description": "Turn a CS-algorithm topic into a 3Blue1Brown-style Manim video, powered by Gemini + Firebase.",
+  "description": "Desktop app that turns a CS-algorithm topic into a 3Blue1Brown-style Manim video, rendered locally.",
+  "author": "Visual Algos",
+  "main": "./out/main/index.js",
   "scripts": {
-    "dev": "npm --prefix web run dev",
-    "build:web": "npm --prefix web run build",
-    "build:functions": "npm --prefix functions run build",
-    "install:all": "npm install && npm --prefix web install && npm --prefix functions install",
-    "emulators": "firebase emulators:start",
-    "deploy": "npm run build:functions && firebase deploy",
-    "deploy:rules": "firebase deploy --only firestore:rules,storage",
-    "deploy:functions": "firebase deploy --only functions"
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "package": "electron-vite build && electron-builder",
+    "package:dir": "electron-vite build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.47",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
   },
   "engines": {
     "node": ">=20"
