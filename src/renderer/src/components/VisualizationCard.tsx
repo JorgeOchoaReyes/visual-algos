@@ -25,7 +25,7 @@ export function VisualizationCard({ v }: { v: Visualization }) {
     >
       <Link
         to={`/v/${v.id}`}
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-panel/70 transition hover:border-accent/40 hover:shadow-xl hover:shadow-black/30"
+        className="card8 group flex h-full flex-col overflow-hidden"
       >
         <div className="relative aspect-video w-full overflow-hidden bg-black">
           {ready ? (
@@ -49,7 +49,7 @@ export function VisualizationCard({ v }: { v: Visualization }) {
               )}
             </>
           ) : (
-            <div className="grid h-full w-full place-items-center bg-gradient-to-br from-white/[0.02] to-transparent text-white/30">
+            <div className="grid h-full w-full place-items-center bg-ink/40 text-white/30">
               {v.status === "error" ? (
                 <AlertTriangle size={22} className="text-red-400/70" />
               ) : (

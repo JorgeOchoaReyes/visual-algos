@@ -4,6 +4,17 @@
 
 :root {
   color-scheme: dark;
+  --bg: #080611;
+  --bg2: #0f0b1e;
+  --panel: #150f2b;
+  --edge: #382d63;
+  --cyan: #22e6ff;
+  --magenta: #ff3ca6;
+  --yellow: #ffd23a;
+  --green: #43f7a5;
+  --text: #ecebff;
+  --dim: #8a83c0;
+  --shadow: rgba(0, 0, 0, 0.6);
 }
 
 html,
@@ -14,26 +25,17 @@ body,
 
 body {
   margin: 0;
+  color: var(--text);
   background:
-    linear-gradient(rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 100% 26px,
-    linear-gradient(90deg, rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 26px 100%,
-    radial-gradient(60rem 40rem at 15% -10%, rgba(123, 108, 255, 0.14), transparent 60%),
-    radial-gradient(50rem 40rem at 100% 0%, rgba(255, 93, 177, 0.1), transparent 55%),
-    #101226;
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 2px, transparent 2px 4px),
+    linear-gradient(rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 100% 28px,
+    linear-gradient(90deg, rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 28px 100%,
+    var(--bg);
   background-attachment: fixed;
-  color: #e9ebfb;
   -webkit-font-smoothing: antialiased;
   font-family: "Courier New", ui-monospace, "SFMono-Regular", Menlo, monospace;
   letter-spacing: 0.01em;
-  /* Let the whole window be draggable-free but selectable in inputs. */
   user-select: none;
-}
-
-/* 8-bit vibe: chunky headings, hard letter-spacing on labels. */
-h1,
-h2,
-h3 {
-  letter-spacing: 0.02em;
 }
 
 input,
@@ -43,28 +45,124 @@ code {
   user-select: text;
 }
 
-.grid-bg {
-  background-image: radial-gradient(rgba(91, 140, 255, 0.12) 1px, transparent 1px);
-  background-size: 22px 22px;
+h1,
+h2,
+h3 {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-/* Custom scrollbars for a more app-like feel. */
+/* ---------- 8-bit / cyberpunk components ---------- */
+.btn8 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.55rem 1rem;
+  color: #05040b;
+  background: var(--cyan);
+  border: 2px solid #04030a;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 0 var(--shadow), 0 0 14px rgba(34, 230, 255, 0.3);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.08s ease;
+}
+.btn8:hover {
+  transform: translate(-1px, -1px);
+  filter: brightness(1.06);
+  box-shadow: 4px 4px 0 0 var(--shadow), 0 0 22px rgba(34, 230, 255, 0.5);
+}
+.btn8:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 var(--shadow);
+}
+.btn8:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn8--magenta {
+  background: var(--magenta);
+  color: #12030c;
+  box-shadow: 3px 3px 0 0 var(--shadow), 0 0 14px rgba(255, 60, 166, 0.35);
+}
+.btn8--magenta:hover {
+  box-shadow: 4px 4px 0 0 var(--shadow), 0 0 22px rgba(255, 60, 166, 0.55);
+}
+.btn8--ghost {
+  background: transparent;
+  color: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 3px 3px 0 0 var(--shadow);
+}
+.btn8--ghost:hover {
+  background: rgba(34, 230, 255, 0.1);
+}
+
+.panel8 {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  box-shadow: 4px 4px 0 0 var(--shadow);
+}
+.card8 {
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  box-shadow: 4px 4px 0 0 var(--shadow);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+}
+.card8:hover {
+  border-color: var(--cyan);
+  transform: translate(-1px, -2px);
+  box-shadow: 6px 6px 0 0 var(--shadow), 0 0 18px rgba(34, 230, 255, 0.25);
+}
+
+/* neon block for logo / icon tiles */
+.tile8 {
+  background: var(--cyan);
+  border: 2px solid #04030a;
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 0 var(--shadow), 0 0 12px rgba(34, 230, 255, 0.4);
+}
+
+.field8 {
+  background: rgba(8, 6, 17, 0.6);
+  border: 2px solid var(--edge);
+  border-radius: 3px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+.field8:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px var(--cyan), 0 0 14px rgba(34, 230, 255, 0.25);
+}
+
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  border: 2px solid transparent;
+  background: var(--edge);
+  border: 3px solid transparent;
   background-clip: content-box;
+  border-radius: 0;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--cyan);
   background-clip: content-box;
 }
 ::selection {
-  background: rgba(91, 140, 255, 0.35);
+  background: rgba(255, 60, 166, 0.4);
+}
+
+.grid-bg {
+  background-image: radial-gradient(rgba(34, 230, 255, 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 
 @keyframes pulse-soft {
@@ -73,10 +171,16 @@ code {
     opacity: 1;
   }
   50% {
-    opacity: 0.45;
+    opacity: 0.4;
   }
 }
-
 .animate-pulse-soft {
-  animation: pulse-soft 1.4s ease-in-out infinite;
+  animation: pulse-soft 1.2s steps(2, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

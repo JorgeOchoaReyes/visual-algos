@@ -136,10 +136,7 @@ export function Detail() {
             <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-white/50">
               {viz.error || "Unknown error."}
             </pre>
-            <button
-              onClick={onRegenerate}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:bg-accent/90"
-            >
+            <button onClick={onRegenerate} className="btn8 mt-4">
               <RotateCw size={14} /> Try again
             </button>
           </div>
@@ -159,16 +156,13 @@ export function Detail() {
         {viz.status === "ready" && viz.videoPath && (
           <button
             onClick={() => window.api.video.revealInFolder(viz.videoPath!)}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-accent/20"
+            className="btn8"
           >
             <FolderOpen size={15} /> Show in folder
           </button>
         )}
         {isTerminal(viz.status) && (
-          <button
-            onClick={onRegenerate}
-            className="flex items-center gap-1.5 rounded-xl border border-white/10 px-4 py-2 text-sm text-white/70 transition hover:border-accent/40 hover:text-white"
-          >
+          <button onClick={onRegenerate} className="btn8 btn8--ghost">
             <RotateCw size={15} /> Regenerate
           </button>
         )}

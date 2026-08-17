@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Code2, Gauge, MonitorSmartphone, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
@@ -235,16 +234,14 @@ export function New({
           );
         })()}
 
-        <motion.button
+        <button
           type="submit"
           disabled={submitting || !canGenerate}
-          whileHover={{ scale: canGenerate ? 1.01 : 1 }}
-          whileTap={{ scale: canGenerate ? 0.99 : 1 }}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-accent to-accent2 px-4 py-3.5 font-medium text-white shadow-lg shadow-accent/20 disabled:opacity-50"
+          className="btn8 w-full justify-center py-3.5"
         >
           <Sparkles size={18} />
           {submitting ? "Starting…" : "Generate video"}
-        </motion.button>
+        </button>
         <p className="text-center text-xs text-white/40">
           Rendering runs on your machine and can take a minute or two. You can leave this page.
           Cost is approximate and depends on your API plan.
