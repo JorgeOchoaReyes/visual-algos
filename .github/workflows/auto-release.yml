@@ -1,0 +1,58 @@
+name: Auto release
+
+# Releases automatically when the "version" in package.json changes on master.
+# Merge a PR that bumps the version and this creates the GitHub Release and
+# publishes installers + auto-update metadata — no tags, no manual steps.
+# (If the release for the current version already exists, it does nothing.)
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      new: ${{ steps.check.outputs.new }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Has this version been released?
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.version }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release v${{ steps.ver.outputs.version }} already exists — nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create the release (empty; installers attach next)
+        if: steps.check.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --notes "Automated release of v${{ steps.ver.outputs.version }}."
+
+  build:
+    needs: check
+    if: needs.check.outputs.new == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      publish: true
+    secrets: inherit

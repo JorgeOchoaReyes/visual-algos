@@ -9,6 +9,9 @@ publish:
   provider: github
   owner: JorgeOchoaReyes
   repo: visual-algos
+  # Publish assets directly to a full (non-draft) release so they attach even
+  # when the release/tag already exists, and so auto-update can see it.
+  releaseType: release
 files:
   - "out/**/*"
   - "package.json"
