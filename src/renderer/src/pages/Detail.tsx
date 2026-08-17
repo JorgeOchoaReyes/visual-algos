@@ -148,6 +148,12 @@ export function Detail() {
         )}
       </motion.div>
 
+      {viz.note && viz.status === "ready" && (
+        <p className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          {viz.note}
+        </p>
+      )}
+
       {viz.description && (
         <p className="mt-5 text-sm leading-relaxed text-white/70">{viz.description}</p>
       )}

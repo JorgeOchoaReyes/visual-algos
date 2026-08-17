@@ -37,13 +37,22 @@ Rules:
     • line: the 1-based line number in "code" that is executing at this step.
     • caption: a short human sentence describing what happens (e.g. "mid = 3",
       "a[3] < target, search right", "swap 5 and 3").
-    • highlight: array indices being compared / looked at right now (optional).
+    • highlight: array indices being compared / looked at right now.
     • pointers: named markers under cells, as a list of {name, index} — e.g.
-      lo/hi/mid, i/j, left/right. Only include the pointers that exist at this
-      step; pointers persist and move across steps.
+      lo/hi/mid, i/j, left/right. Pointers persist and move across steps.
     • setArray: the FULL new array contents, ONLY when the array actually changed
       this step (a swap or write). Omit when unchanged.
     • found: an array index to mark as done/success (optional).
+
+CRITICAL — the right-side visualization MUST visibly change on (almost) every
+step. Never emit steps that only change 'line' and 'caption'. On EVERY step
+include at least one of: 'highlight' (the indices under consideration), updated
+'pointers' (give the current position of every relevant index like i/j/lo/mid/hi
+— repeat them each step so they move), or 'setArray' (on a swap/write). If the
+array/pointers don't move, the video looks broken. Concretely: an index variable
+that changes value → a pointer that moves; a comparison → highlight those cells;
+a swap/assignment → setArray with the new contents.
+
 - Keep steps between ~6 and ~30. Every 'line' must be a valid line number.
 - Also write a 60–110 word spoken "narration" that explains the walk in order.
 - Make the steps and code perfectly consistent: the highlighted line must match
@@ -157,6 +166,22 @@ export function validateSpec(spec: GeneratedSpec): Validated {
     if (s.line < 1 || s.line > spec.code.length) {
       return { ok: false, reason: `Step references line ${s.line}, out of range.` };
     }
+  }
+  // The right-side visualization must actually move. Reject specs whose steps
+  // rarely touch highlight/pointers/setArray (they render as "code jumps but
+  // nothing changes") so the pipeline repairs them.
+  const changing = spec.steps.filter(
+    (s) =>
+      (s.highlight && s.highlight.length > 0) ||
+      (s.pointers && Object.keys(s.pointers).length > 0) ||
+      (s.array && s.array.length > 0),
+  ).length;
+  if (changing < Math.ceil(spec.steps.length * 0.6)) {
+    return {
+      ok: false,
+      reason:
+        "Most steps don't update the visualization. Every step must include highlight and/or pointers (and setArray on writes).",
+    };
   }
   return { ok: true };
 }

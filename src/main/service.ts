@@ -67,6 +67,7 @@ export async function createVisualization(
     narration: null,
     narrate,
     hasAudio: false,
+    note: null,
     error: null,
     createdAt: now,
     updatedAt: now,
@@ -151,8 +152,11 @@ async function runPipeline(
 
     // 3. Optional narration.
     let hasAudio = false;
+    let note: string | null = null;
     if (narrate && spec.narration && render.videoPath) {
-      hasAudio = (await addNarration(id, spec.narration, render.videoPath)).ok;
+      const res = await addNarration(id, spec.narration, render.videoPath);
+      hasAudio = res.ok;
+      if (!res.ok) note = `Narration wasn't added: ${res.error || "unknown error"}`;
     }
 
     emit(
@@ -161,6 +165,7 @@ async function runPipeline(
         videoPath: render.videoPath ?? null,
         durationSeconds: render.durationSeconds ?? null,
         hasAudio,
+        note,
         error: null,
       }),
     );
@@ -190,12 +195,13 @@ async function addNarration(
   id: string,
   narration: string,
   videoPath: string,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const settings = getSettings();
+    if (!settings.elevenLabsApiKey) return { ok: false, error: "no ElevenLabs API key" };
     const python = await resolvePythonPath();
     const ffmpeg = await resolveFfmpegExe(python);
-    if (!ffmpeg) return { ok: false };
+    if (!ffmpeg) return { ok: false, error: "ffmpeg unavailable" };
     const { videosDir } = getPaths();
     const audioPath = join(videosDir, `${id}.mp3`);
     const tmpOut = join(videosDir, `${id}.muxed.mp4`);
@@ -209,13 +215,13 @@ async function addNarration(
     if (!mux.ok) {
       rmSync(tmpOut, { force: true });
       rmSync(audioPath, { force: true });
-      return { ok: false };
+      return { ok: false, error: mux.error ? mux.error.slice(0, 160) : "audio mux failed" };
     }
     renameSync(tmpOut, videoPath);
     rmSync(audioPath, { force: true });
     return { ok: true };
-  } catch {
-    return { ok: false };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message.slice(0, 160) : "narration error" };
   }
 }
 

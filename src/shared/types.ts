@@ -46,6 +46,8 @@ export interface Visualization {
   narrate: boolean;
   /** True once narration audio was synthesized and muxed into the video. */
   hasAudio: boolean;
+  /** Non-fatal note (e.g. why narration didn't attach). */
+  note: string | null;
   error: string | null;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms

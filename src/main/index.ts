@@ -1,7 +1,6 @@
-import { app, BrowserWindow, protocol, net } from "electron";
-import { existsSync } from "fs";
+import { app, BrowserWindow, protocol } from "electron";
+import { existsSync, promises as fsp } from "fs";
 import { join } from "path";
-import { pathToFileURL } from "url";
 import { MEDIA_PROTOCOL } from "@shared/types";
 import { registerIpc } from "./ipc";
 import { initAutoUpdate } from "./updater";
@@ -61,12 +60,55 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  // Serve vizmedia://<id> from the on-disk videos folder.
-  protocol.handle(MEDIA_PROTOCOL, (request) => {
+  // Serve vizmedia://<id> from disk WITH HTTP range support, so the <video>
+  // element can scrub/seek instead of only playing linearly.
+  protocol.handle(MEDIA_PROTOCOL, async (request) => {
     const url = new URL(request.url);
     const id = (url.hostname || url.pathname.replace(/^\/+/, "")).replace(/[^a-zA-Z0-9-]/g, "");
     const file = getPaths().videoFile(id);
-    return net.fetch(pathToFileURL(file).toString());
+    try {
+      const stat = await fsp.stat(file);
+      const total = stat.size;
+      const range = request.headers.get("Range");
+      const baseHeaders: Record<string, string> = {
+        "Content-Type": "video/mp4",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+      };
+
+      if (range) {
+        const m = /bytes=(\d*)-(\d*)/.exec(range);
+        let start = m && m[1] ? parseInt(m[1], 10) : 0;
+        let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+        if (!Number.isFinite(start) || start < 0) start = 0;
+        if (!Number.isFinite(end) || end >= total) end = total - 1;
+        if (start > end) start = 0;
+        const size = end - start + 1;
+        const buf = Buffer.alloc(size);
+        const fh = await fsp.open(file, "r");
+        try {
+          await fh.read(buf, 0, size, start);
+        } finally {
+          await fh.close();
+        }
+        return new Response(buf, {
+          status: 206,
+          headers: {
+            ...baseHeaders,
+            "Content-Range": `bytes ${start}-${end}/${total}`,
+            "Content-Length": String(size),
+          },
+        });
+      }
+
+      const data = await fsp.readFile(file);
+      return new Response(data, {
+        status: 200,
+        headers: { ...baseHeaders, "Content-Length": String(total) },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
   });
 
   registerIpc();
