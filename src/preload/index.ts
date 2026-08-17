@@ -45,6 +45,9 @@ const api = {
     revealInFolder: (path: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IPC.videoReveal, path),
   },
+  app: {
+    version: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
+  },
   updates: {
     onStatus: (cb: (state: UpdateState) => void): (() => void) => {
       const handler = (_e: unknown, state: UpdateState) => cb(state);

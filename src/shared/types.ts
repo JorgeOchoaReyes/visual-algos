@@ -144,6 +144,7 @@ export const IPC = {
   vizCreate: "viz:create",
   vizDelete: "viz:delete",
   vizRegenerate: "viz:regenerate",
+  appVersion: "app:version",
   vizChanged: "viz:changed", // main -> renderer broadcast
   videoReveal: "video:reveal",
   updateStatus: "update:status", // main -> renderer broadcast

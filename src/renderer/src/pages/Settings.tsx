@@ -73,7 +73,12 @@ export function SettingsPage({
 
   const [installing, setInstalling] = useState(false);
   const [log, setLog] = useState("");
+  const [version, setVersion] = useState("");
   const logRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    window.api.app.version().then(setVersion);
+  }, []);
 
   useEffect(() => {
     if (!settings) return;
@@ -133,7 +138,14 @@ export function SettingsPage({
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        {version && (
+          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-0.5 font-mono text-xs text-white/55">
+            v{version}
+          </span>
+        )}
+      </div>
 
       {/* Gemini */}
       <section className="mt-8 space-y-4">
