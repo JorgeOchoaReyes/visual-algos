@@ -40,6 +40,9 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // Allow the rendered video to autoplay WITH sound (Chromium otherwise
+      // autoplays muted, which reads as "no audio").
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 
