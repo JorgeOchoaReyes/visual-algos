@@ -15,15 +15,25 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(60rem 40rem at 15% -10%, rgba(91, 140, 255, 0.1), transparent 60%),
-    radial-gradient(50rem 40rem at 100% 0%, rgba(138, 107, 255, 0.09), transparent 55%),
-    #0b0e14;
+    linear-gradient(rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 100% 26px,
+    linear-gradient(90deg, rgba(123, 108, 255, 0.05) 1px, transparent 1px) 0 0 / 26px 100%,
+    radial-gradient(60rem 40rem at 15% -10%, rgba(123, 108, 255, 0.14), transparent 60%),
+    radial-gradient(50rem 40rem at 100% 0%, rgba(255, 93, 177, 0.1), transparent 55%),
+    #101226;
   background-attachment: fixed;
-  color: #e6e9ef;
+  color: #e9ebfb;
   -webkit-font-smoothing: antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Courier New", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.01em;
   /* Let the whole window be draggable-free but selectable in inputs. */
   user-select: none;
+}
+
+/* 8-bit vibe: chunky headings, hard letter-spacing on labels. */
+h1,
+h2,
+h3 {
+  letter-spacing: 0.02em;
 }
 
 input,

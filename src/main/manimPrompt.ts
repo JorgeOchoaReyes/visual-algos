@@ -1,189 +1,161 @@
-import type { RenderQuality } from "@shared/types";
+import type { SchemaType } from "@google/generative-ai";
 
-export interface GeneratedScene {
-  title: string;
-  description: string;
-  sceneName: string;
-  code: string;
-  /** Optional voiceover script (~60-110 words). */
-  narration?: string;
+/** A single animation step (internal form used by the renderer). */
+export interface SpecStep {
+  line: number; // 1-based index into code
+  highlight?: number[]; // array indices to emphasize
+  pointers?: Record<string, number>; // named pointers -> index
+  array?: number[]; // new full array state (for swaps/sorts)
+  found?: number | null; // index to mark done/green
+  caption: string;
 }
 
-/** Instructions given to Gemini so the output is one render-safe Manim scene. */
-export const SYSTEM_INSTRUCTION = `You are an expert Manim (Community Edition, v0.18+) developer who creates clear,
-beautiful, 3Blue1Brown-style animations that explain computer-science algorithms
-and data structures.
+/** The structured content Gemini produces (the AI writes DATA, not code). */
+export interface GeneratedSpec {
+  title: string;
+  description: string;
+  narration: string;
+  code: string[];
+  array: number[];
+  target?: number | null;
+  steps: SpecStep[];
+}
 
-You will be given a topic. Produce ONE self-contained Manim scene that visually
-explains it, in a CODE-FOLLOWS-LINE style. Follow these rules strictly.
+export const SYSTEM_INSTRUCTION = `You explain computer-science algorithms as short, precise, step-by-step
+animations. You DO NOT write animation code. Instead you output structured DATA
+that a fixed renderer turns into a video: the algorithm's source code on the
+left, a small array visualization on the right, and an ordered list of steps
+that each highlight ONE code line and update the array state in sync.
 
-THE CORE FORMAT — CODE ON SCREEN, HIGHLIGHTED LINE BY LINE (required)
-- The video MUST show the algorithm's source code on screen the whole time,
-  and MUST highlight the exact line that is "executing" at each step, in sync
-  with the visual on the data.
-- Split the frame into two panels: the CODE panel (left, ~45% width) and the
-  VISUAL panel (right, the array/graph/tree/etc.).
-- Write the algorithm as SHORT pseudocode or Python — 6 to 14 lines maximum —
-  so it fits without overflowing. Keep each line short.
-- Render the code as a VGroup of one Text per line, LEFT-aligned, monospaced
-  look via a small font_size (about 22), arranged downward with small buff.
-  Store the lines in a list so you can index them, e.g. lines[3].
-  (You MAY use Manim's Code mobject instead, but only if it clearly fits the
-  panel; the per-line VGroup approach is more reliable — prefer it.)
-- Create ONE highlight indicator — a Rectangle or SurroundingRectangle behind
-  the current line (a soft fill like YELLOW at ~0.25 opacity, or a colored
-  arrow in the left margin). Define a helper that moves the highlight to a
-  given line index.
-- DRIVE THE ANIMATION BY LINE: for each step of the algorithm, in the SAME
-  self.play(...) call (or back-to-back), (a) move the highlight to the line
-  that runs, and (b) animate the matching change on the data (a comparison,
-  swap, pointer move, visited node, etc.). The highlighted line and the visual
-  change must always correspond. Add a brief self.wait() so viewers can read.
-- Walk through a CONCRETE small example (e.g. search/sort a 5-8 element array,
-  traverse a small graph). Actually step through the loop iterations — do not
-  just show start and end.
+Rules:
+- Choose ONE concrete, SHORT example (an array of 5–8 integers). Keep it small so
+  the whole run is quick.
+- Write the algorithm as 6–14 SHORT lines of real, correct code in the requested
+  language. This is what appears on screen and gets highlighted line by line.
+- Produce an ordered list of steps that walk the example to completion (actually
+  loop through the iterations — don't skip to the end). Each step has:
+    • line: the 1-based line number in "code" that is executing at this step.
+    • caption: a short human sentence describing what happens (e.g. "mid = 3",
+      "a[3] < target, search right", "swap 5 and 3").
+    • highlight: array indices being compared / looked at right now (optional).
+    • pointers: named markers under cells, as a list of {name, index} — e.g.
+      lo/hi/mid, i/j, left/right. Only include the pointers that exist at this
+      step; pointers persist and move across steps.
+    • setArray: the FULL new array contents, ONLY when the array actually changed
+      this step (a swap or write). Omit when unchanged.
+    • found: an array index to mark as done/success (optional).
+- Keep steps between ~6 and ~30. Every 'line' must be a valid line number.
+- Also write a 60–110 word spoken "narration" that explains the walk in order.
+- Make the steps and code perfectly consistent: the highlighted line must match
+  what the caption and array change describe.
 
-GENERAL CODE RULES
-- Import only from manim: "from manim import *". You may also "import numpy as np".
-- Define exactly ONE class that subclasses Scene. Its construct() method drives
-  the whole animation.
-- Self-contained and deterministic. Do NOT read files, access the network, use
-  os/sys/subprocess/open/eval/exec, or load external assets, images, fonts,
-  SVGs, or audio.
-- Total runtime roughly 25 to 70 seconds. Use self.wait() pauses.
-- Prefer Text(), MarkupText(), and geometric mobjects (Square, Circle, Arrow,
-  Line, VGroup, etc.). Use MathTex()/Tex() only when a formula genuinely helps.
-- Lay elements out so nothing overlaps or runs off-screen. Use .arrange(),
-  .next_to(), .to_edge(), reasonable font sizes, and keep within the 14.2 x 8
-  frame. Give the code panel and visual panel clearly separated regions.
-- The code must run with no arguments via: manim render -q<quality> scene.py <ClassName>
-- Do NOT include explanatory prose, markdown, or comments outside the code field.
-
-CORRECTNESS (the code MUST run without errors)
-- The Python must be complete and executable as-is. Define EVERY variable
-  before you use it; do not reference names you never assigned. Double-check
-  every identifier is spelled consistently.
-- Keep the logic simple and favor short, obviously-correct helpers over clever
-  index arithmetic. It is better to hard-code the steps of a small example than
-  to write fragile generic bookkeeping. Fewer moving parts = fewer bugs.
-- Only index a VGroup/list within its bounds. Only call methods that exist in
-  Manim CE v0.18. Mentally run the construct() method start to finish and make
-  sure it cannot raise.
-
-NARRATION
-- Also write a short "narration" script: 60 to 110 words of plain spoken English
-  that explains what the viewer is seeing, in order. No stage directions, no
-  markdown, no code — just sentences a narrator would read aloud. It will be
-  turned into a voiceover, so keep it natural and paced to ~30-60 seconds.
-
-OUTPUT
-Return JSON matching the provided schema: a short human title, a one-to-two
-sentence description of what the video shows (mention it walks through the code
-line by line), the exact scene class name, the complete Python code as a single
-string, and the narration script.`;
+Return ONLY the JSON described by the schema.`;
 
 export const RESPONSE_SCHEMA = {
   type: "object",
   properties: {
-    title: { type: "string", description: "Short title, max ~60 chars." },
-    description: {
-      type: "string",
-      description: "1-2 sentence summary of what the animation shows.",
-    },
-    sceneName: {
-      type: "string",
-      description: "Exact name of the Scene subclass defined in the code.",
-    },
-    code: { type: "string", description: "Complete, runnable Manim Python source." },
-    narration: {
-      type: "string",
-      description: "60-110 word spoken voiceover script (plain sentences).",
+    title: { type: "string" },
+    description: { type: "string" },
+    narration: { type: "string" },
+    code: { type: "array", items: { type: "string" } },
+    array: { type: "array", items: { type: "integer" } },
+    target: { type: "integer" },
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          line: { type: "integer" },
+          caption: { type: "string" },
+          highlight: { type: "array", items: { type: "integer" } },
+          pointers: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { name: { type: "string" }, index: { type: "integer" } },
+              required: ["name", "index"],
+            },
+          },
+          setArray: { type: "array", items: { type: "integer" } },
+          found: { type: "integer" },
+        },
+        required: ["line", "caption"],
+      },
     },
   },
-  required: ["title", "description", "sceneName", "code", "narration"],
+  required: ["title", "description", "narration", "code", "array", "steps"],
 } as const;
 
-export function buildUserPrompt(topic: string): string {
-  return `Topic: ${topic}\n\nCreate the Manim scene now.`;
+export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
+
+export function buildUserPrompt(topic: string, language: string): string {
+  return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\nProduce the walkthrough JSON now.`;
 }
 
-/**
- * Prompt to repair a scene that failed to render. We hand back the exact code
- * and the Python traceback and ask for a corrected, complete scene.
- */
-export function buildRepairPrompt(
-  topic: string,
-  code: string,
-  errorText: string,
-): string {
+export function buildRepairPrompt(topic: string, language: string, error: string): string {
   return [
-    `The following Manim scene for the topic "${topic}" failed to render.`,
-    "Fix the bug so it renders cleanly, keeping the same code-follows-line",
-    "style and the same scene class name. Return the COMPLETE corrected program",
-    "and an updated narration — not a diff.",
+    `The previous walkthrough JSON for "${topic}" (language ${language}) was invalid:`,
+    error,
     "",
-    "=== Error / traceback ===",
-    errorText.slice(-2000),
-    "",
-    "=== Current code ===",
-    code,
+    "Return a corrected, complete walkthrough JSON that fixes this.",
   ].join("\n");
 }
 
-export const QUALITY_FLAG: Record<RenderQuality, string> = {
-  l: "-ql",
-  m: "-qm",
-  h: "-qh",
-};
+/** Convert the raw Gemini object (pointers as list, setArray) into our form. */
+export function normalizeSpec(raw: Record<string, unknown>, topic: string): GeneratedSpec {
+  const codeIn = Array.isArray(raw.code) ? (raw.code as unknown[]) : [];
+  const code = codeIn.map((l) => String(l)).slice(0, 14);
+  const arrayIn = Array.isArray(raw.array) ? (raw.array as unknown[]) : [];
+  const array = arrayIn.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 9);
 
-/**
- * Generated Python is arbitrary code executed by `manim`. We statically scan it
- * before rendering. This is a guardrail; the strongest protection is that this
- * runs on the user's own machine under their own account, and only ever touches
- * a temp dir.
- */
-const DENYLIST: { pattern: RegExp; reason: string }[] = [
-  { pattern: /\bimport\s+os\b/, reason: "os module" },
-  { pattern: /\bimport\s+sys\b/, reason: "sys module" },
-  { pattern: /\bimport\s+subprocess\b/, reason: "subprocess module" },
-  { pattern: /\bimport\s+socket\b/, reason: "socket module" },
-  { pattern: /\bimport\s+shutil\b/, reason: "shutil module" },
-  { pattern: /\bimport\s+requests\b/, reason: "requests module" },
-  { pattern: /\bimport\s+urllib\b/, reason: "urllib module" },
-  { pattern: /\bimport\s+pathlib\b/, reason: "pathlib module" },
-  { pattern: /\bfrom\s+os\b/, reason: "os import" },
-  { pattern: /\bfrom\s+subprocess\b/, reason: "subprocess import" },
-  { pattern: /\b__import__\s*\(/, reason: "__import__" },
-  { pattern: /\beval\s*\(/, reason: "eval()" },
-  { pattern: /\bexec\s*\(/, reason: "exec()" },
-  { pattern: /\bopen\s*\(/, reason: "open()" },
-  { pattern: /\bcompile\s*\(/, reason: "compile()" },
-  { pattern: /\bglobals\s*\(/, reason: "globals()" },
-];
+  const stepsIn = Array.isArray(raw.steps) ? (raw.steps as Record<string, unknown>[]) : [];
+  const steps: SpecStep[] = stepsIn.slice(0, 40).map((s) => {
+    const pointers: Record<string, number> = {};
+    if (Array.isArray(s.pointers)) {
+      for (const p of s.pointers as Record<string, unknown>[]) {
+        if (p && typeof p.name === "string" && Number.isFinite(Number(p.index))) {
+          pointers[p.name] = Number(p.index);
+        }
+      }
+    }
+    const setArray = Array.isArray(s.setArray)
+      ? (s.setArray as unknown[]).map((n) => Number(n))
+      : undefined;
+    return {
+      line: Math.max(1, Number(s.line) || 1),
+      caption: typeof s.caption === "string" ? s.caption : "",
+      highlight: Array.isArray(s.highlight)
+        ? (s.highlight as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n))
+        : [],
+      pointers,
+      array: setArray,
+      found: Number.isFinite(Number(s.found)) ? Number(s.found) : null,
+    };
+  });
+
+  return {
+    title: (typeof raw.title === "string" && raw.title ? raw.title : topic).slice(0, 120),
+    description: typeof raw.description === "string" ? raw.description.slice(0, 600) : "",
+    narration: typeof raw.narration === "string" ? raw.narration.slice(0, 1200) : "",
+    code,
+    array,
+    target: Number.isFinite(Number(raw.target)) ? Number(raw.target) : null,
+    steps,
+  };
+}
 
 export interface Validated {
   ok: boolean;
   reason?: string;
 }
 
-export function validateManimCode(scene: GeneratedScene): Validated {
-  const { code, sceneName } = scene;
-
-  if (!code || code.trim().length < 40) {
-    return { ok: false, reason: "Generated code was empty or too short." };
-  }
-  if (!/from\s+manim\s+import|import\s+manim/.test(code)) {
-    return { ok: false, reason: "Generated code does not import manim." };
-  }
-  if (!sceneName || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(sceneName)) {
-    return { ok: false, reason: "Invalid scene class name." };
-  }
-  if (!new RegExp(`class\\s+${sceneName}\\s*\\(`).test(code)) {
-    return { ok: false, reason: `Code does not define class ${sceneName}.` };
-  }
-  for (const { pattern, reason } of DENYLIST) {
-    if (pattern.test(code)) {
-      return { ok: false, reason: `Disallowed construct in generated code: ${reason}.` };
+export function validateSpec(spec: GeneratedSpec): Validated {
+  if (spec.code.length < 3) return { ok: false, reason: "Too few code lines." };
+  if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
+  if (spec.steps.length < 2) return { ok: false, reason: "Too few steps." };
+  for (const s of spec.steps) {
+    if (s.line < 1 || s.line > spec.code.length) {
+      return { ok: false, reason: `Step references line ${s.line}, out of range.` };
     }
   }
   return { ok: true };

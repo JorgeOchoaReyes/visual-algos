@@ -1,4 +1,21 @@
 export type RenderQuality = "l" | "m" | "h";
+export type Orientation = "landscape" | "portrait";
+
+export const LANGUAGES: { id: string; label: string }[] = [
+  { id: "python", label: "Python" },
+  { id: "javascript", label: "JavaScript" },
+  { id: "typescript", label: "TypeScript" },
+  { id: "java", label: "Java" },
+  { id: "cpp", label: "C++" },
+  { id: "c", label: "C" },
+  { id: "go", label: "Go" },
+  { id: "rust", label: "Rust" },
+];
+
+export const ORIENTATIONS: { id: Orientation; label: string; hint: string }[] = [
+  { id: "landscape", label: "Landscape", hint: "16:9 · YouTube" },
+  { id: "portrait", label: "Portrait", hint: "9:16 · Shorts/TikTok" },
+];
 
 export type VisualizationStatus =
   | "generating" // Gemini is writing the Manim scene
@@ -13,8 +30,13 @@ export interface Visualization {
   description: string;
   status: VisualizationStatus;
   quality: RenderQuality;
+  /** Generated source lines joined for display. */
   manimCode: string | null;
   sceneName: string | null;
+  /** Programming language of the generated code. */
+  language: string;
+  /** Video aspect: landscape (16:9) or portrait (9:16). */
+  orientation: Orientation;
   /** Absolute path to the rendered mp4 on disk (once ready). */
   videoPath: string | null;
   durationSeconds: number | null;
@@ -34,6 +56,10 @@ export interface CreateVisualizationInput {
   quality: RenderQuality;
   /** Generate + mux an ElevenLabs voiceover (requires an ElevenLabs key). */
   narrate?: boolean;
+  /** Programming language for the on-screen code (default python). */
+  language?: string;
+  /** Video aspect (default landscape). */
+  orientation?: Orientation;
 }
 
 export interface Settings {

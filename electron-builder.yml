@@ -25,6 +25,10 @@ extraResources:
   # Runtime copy of the icon for the app window (Linux especially).
   - from: "build/icon.png"
     to: "icon.png"
+  # Deterministic Manim walkthrough renderer.
+  - from: "resources/render"
+    to: "render"
+    filter: ["**/*"]
 mac:
   category: public.app-category.education
   target:
