@@ -6,10 +6,19 @@ name: Build installers
 # manually from the Actions tab to get build artifacts without a release.
 
 on:
+  # Called by auto-release.yml when a version bump lands on master.
+  workflow_call:
+    inputs:
+      publish:
+        description: "Publish installers to the GitHub release for this version"
+        type: boolean
+        default: false
+  # Manual run from the Actions tab → build artifacts only (no release).
+  workflow_dispatch:
+  # A manually pushed tag still cuts a release too.
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -56,7 +65,7 @@ jobs:
       # to the GitHub Release, so electron-updater can auto-update installed apps.
       # On a manual run: just build, and upload artifacts below.
       - name: Package installer
-        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        run: npx electron-builder --publish ${{ (inputs.publish || startsWith(github.ref, 'refs/tags/')) && 'always' || 'never' }}
         env:
           # Skip code signing (unsigned builds). To sign, provide the relevant
           # certificates as secrets and remove this.
