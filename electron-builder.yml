@@ -6,8 +6,13 @@ directories:
 files:
   - "out/**/*"
   - "package.json"
-asarUnpack:
-  - "resources/**"
+# The bundled Python + Manim runtime is copied verbatim into the app's
+# resources dir (outside the asar, so its binaries stay executable). At runtime
+# it lives at process.resourcesPath/pyruntime.
+extraResources:
+  - from: "resources/pyruntime"
+    to: "pyruntime"
+    filter: ["**/*"]
 mac:
   category: public.app-category.education
   target:

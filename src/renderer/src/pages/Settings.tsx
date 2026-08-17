@@ -120,8 +120,9 @@ export function SettingsPage({
           </button>
         </div>
         <p className="mt-1 text-xs text-white/45">
-          Rendering runs locally with Manim. It needs Python 3.10+, Manim, and ffmpeg (plus a
-          LaTeX install if you want mathematical formulas).
+          Rendering runs locally with Manim. The installed app ships its own Python + Manim +
+          ffmpeg, so this should be green with no setup. (In a source build, use the button below
+          or point it at your own Python.)
         </p>
 
         <div className="mt-4 space-y-2">

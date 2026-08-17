@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { RenderQuality } from "@shared/types";
 import { QUALITY_FLAG } from "./manimPrompt";
-import { resolvePythonPath } from "./env";
+import { resolveFfmpegExe, resolvePythonPath } from "./env";
 import { getPaths } from "./paths";
 
 export interface RenderResult {
@@ -50,15 +50,16 @@ function findMp4s(dir: string): string[] {
   return out;
 }
 
-async function probeDuration(ffmpegPath: string, file: string): Promise<number | null> {
-  // ffprobe usually sits next to ffmpeg; try it, then fall back to ffmpeg -i parsing.
-  const probe = await run(
-    ffmpegPath.replace(/ffmpeg(\.exe)?$/i, (m) => m.replace("ffmpeg", "ffprobe")),
-    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nokey=1:noprint_wrappers=1", file],
-    { timeout: 20000 },
-  );
-  const val = parseFloat(probe.stdout.trim());
-  return Number.isFinite(val) ? Math.round(val * 100) / 100 : null;
+/**
+ * Best-effort duration. imageio-ffmpeg ships ffmpeg but not ffprobe, so we
+ * parse the "Duration: HH:MM:SS.xx" line ffmpeg prints to stderr for `-i`.
+ */
+async function probeDuration(ffmpegExe: string, file: string): Promise<number | null> {
+  const res = await run(ffmpegExe, ["-i", file], { timeout: 20000 });
+  const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(res.stderr || res.stdout);
+  if (!m) return null;
+  const seconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  return Number.isFinite(seconds) ? Math.round(seconds * 100) / 100 : null;
 }
 
 /**
@@ -82,6 +83,17 @@ export async function renderScene(params: {
     const scriptPath = join(workdir, "scene.py");
     const mediaDir = join(workdir, "media");
     writeFileSync(scriptPath, code, "utf-8");
+
+    // Point Manim at a concrete ffmpeg (the bundled static binary from
+    // imageio-ffmpeg) via a local manim.cfg, so renders need no system ffmpeg.
+    const ffmpegExe = await resolveFfmpegExe(python);
+    if (ffmpegExe && ffmpegExe !== "ffmpeg") {
+      writeFileSync(
+        join(workdir, "manim.cfg"),
+        `[ffmpeg]\nffmpeg_executable = ${ffmpegExe}\n`,
+        "utf-8",
+      );
+    }
 
     // Invoke manim as a python module so we don't depend on a console script on PATH.
     const args = [
@@ -125,7 +137,7 @@ export async function renderScene(params: {
 
     let duration: number | null = null;
     try {
-      duration = await probeDuration("ffmpeg", dest);
+      if (ffmpegExe) duration = await probeDuration(ffmpegExe, dest);
     } catch {
       duration = null;
     }

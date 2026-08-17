@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { execFile } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -31,6 +32,20 @@ function run(cmd: string, args: string[], timeout = 20000): Promise<RunResult> {
 
 const isWin = platform() === "win32";
 
+/**
+ * Path to the Python interpreter inside the runtime bundled with the app
+ * (built by scripts/setup-python-runtime.mjs). This is what makes the app
+ * "just works" with no user setup. Returns null if not bundled (e.g. a dev
+ * build where setup:python hasn't run).
+ */
+export function bundledPython(): string | null {
+  const base = app.isPackaged
+    ? join(process.resourcesPath, "pyruntime")
+    : join(app.getAppPath(), "resources", "pyruntime");
+  const p = isWin ? join(base, "python.exe") : join(base, "bin", "python3");
+  return existsSync(p) ? p : null;
+}
+
 /** Path to the python inside the app-managed venv, if it exists. */
 export function managedVenvPython(): string | null {
   const { venvDir } = getPaths();
@@ -38,15 +53,38 @@ export function managedVenvPython(): string | null {
   return existsSync(p) ? p : null;
 }
 
-/** Ordered list of python interpreters to try. */
+/** Ordered list of python interpreters to try (bundled first — zero setup). */
 function pythonCandidates(): string[] {
   const settings = getSettings();
   const list: string[] = [];
+  const bundled = bundledPython();
+  if (bundled) list.push(bundled);
   const managed = managedVenvPython();
   if (managed) list.push(managed);
   if (settings.pythonPath) list.push(settings.pythonPath);
   list.push("python3", "python");
   return [...new Set(list)];
+}
+
+/**
+ * Resolve an ffmpeg executable for rendering. Prefers the static binary that
+ * ships with imageio-ffmpeg inside the bundled runtime, then a system ffmpeg.
+ * Returns null if none is found.
+ */
+export async function resolveFfmpegExe(pythonPath: string | null): Promise<string | null> {
+  if (pythonPath) {
+    const bundled = await run(
+      pythonPath,
+      ["-c", "import imageio_ffmpeg, sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())"],
+      10000,
+    );
+    if (bundled.code === 0 && bundled.stdout.trim() && existsSync(bundled.stdout.trim())) {
+      return bundled.stdout.trim();
+    }
+  }
+  const sys = await run("ffmpeg", ["-version"], 8000);
+  if (sys.code === 0) return "ffmpeg";
+  return null;
 }
 
 /** Resolve the first working python interpreter path. */

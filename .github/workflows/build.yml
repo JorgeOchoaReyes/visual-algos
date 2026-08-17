@@ -1,0 +1,84 @@
+name: Build installers
+
+# Produces downloadable desktop installers (with the Python + Manim runtime
+# bundled in) for macOS, Windows, and Linux. Push a tag like v0.1.0 to cut a
+# release; installers are attached to it automatically. You can also run it
+# manually from the Actions tab to get build artifacts without a release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Linux has no manimpango wheel, so it compiles from source and needs
+      # pango/cairo dev headers. (macOS/Windows use prebuilt wheels — no deps.)
+      - name: Install Linux build deps for Manim
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango1.0-dev libcairo2-dev pkg-config build-essential
+
+      - name: Build bundled Python + Manim runtime
+        run: npm run setup:python
+
+      - name: Build app bundles
+        run: npm run build
+
+      - name: Package installer
+        run: npx electron-builder --publish never
+        env:
+          # Skip code signing (unsigned builds). To sign, provide the relevant
+          # certificates as secrets and remove this.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-algos-${{ matrix.name }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+          if-no-files-found: ignore
+
+      - name: Attach installers to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

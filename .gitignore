@@ -26,3 +26,8 @@ npm-debug.log*
 
 # TS incremental build info
 *.tsbuildinfo
+
+# Bundled Python + Manim runtime (built by scripts/setup-python-runtime.mjs;
+# large + platform-specific, produced at package time)
+resources/pyruntime/
+resources/*.tar.gz
