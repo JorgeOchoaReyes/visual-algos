@@ -53,7 +53,8 @@ export function New({
     <div className="mx-auto max-w-2xl px-4 py-12">
       <h1 className="text-2xl font-semibold">New video</h1>
       <p className="mt-1 text-sm text-white/55">
-        Describe a computer-science concept. The clearer the ask, the better the animation.
+        Describe a computer-science concept. The video shows the algorithm's code and highlights
+        each line as it runs, in sync with the visual. The clearer the ask, the better the animation.
       </p>
 
       {!canGenerate && (
