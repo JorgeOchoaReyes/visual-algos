@@ -1,11 +1,22 @@
+import { app } from "electron";
 import { execFile } from "child_process";
-import { mkdtempSync, rmSync, readdirSync, statSync, copyFileSync, writeFileSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+  writeFileSync,
+  existsSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { RenderQuality } from "@shared/types";
-import { QUALITY_FLAG } from "./manimPrompt";
+import type { GeneratedSpec } from "./manimPrompt";
+import type { Orientation, RenderQuality } from "@shared/types";
 import { resolveFfmpegExe, resolvePythonPath } from "./env";
 import { getPaths } from "./paths";
+
+const QUALITY_FLAG: Record<RenderQuality, string> = { l: "-ql", m: "-qm", h: "-qh" };
 
 export interface RenderResult {
   ok: boolean;
@@ -39,21 +50,25 @@ function run(
   });
 }
 
-/** Recursively collect .mp4 files under a directory. */
+/** Path to the bundled deterministic renderer template. */
+function templatePath(): string | null {
+  const base = app.isPackaged
+    ? join(process.resourcesPath, "render")
+    : join(app.getAppPath(), "resources", "render");
+  const p = join(base, "walkthrough.py");
+  return existsSync(p) ? p : null;
+}
+
 function findMp4s(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...findMp4s(full));
-    else if (entry.isFile() && entry.name.toLowerCase().endsWith(".mp4")) out.push(full);
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) out.push(...findMp4s(full));
+    else if (e.isFile() && e.name.toLowerCase().endsWith(".mp4")) out.push(full);
   }
   return out;
 }
 
-/**
- * Best-effort duration. imageio-ffmpeg ships ffmpeg but not ffprobe, so we
- * parse the "Duration: HH:MM:SS.xx" line ffmpeg prints to stderr for `-i`.
- */
 async function probeDuration(ffmpegExe: string, file: string): Promise<number | null> {
   const res = await run(ffmpegExe, ["-i", file], { timeout: 20000 });
   const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(res.stderr || res.stdout);
@@ -63,76 +78,70 @@ async function probeDuration(ffmpegExe: string, file: string): Promise<number | 
 }
 
 /**
- * Render a Manim scene to an MP4 stored at videos/{id}.mp4.
- * Runs entirely on the local machine via the user's python + manim.
+ * Render a structured walkthrough spec to an MP4 via the bundled Manim template.
+ * The AI-produced spec is pure DATA (written to spec.json); the template is our
+ * trusted, fixed renderer.
  */
-export async function renderScene(params: {
+export async function renderSpec(params: {
   id: string;
-  code: string;
-  sceneName: string;
+  spec: GeneratedSpec;
+  language: string;
+  orientation: Orientation;
   quality: RenderQuality;
+  theme?: string;
   timeoutMs?: number;
 }): Promise<RenderResult> {
-  const { id, code, sceneName, quality, timeoutMs = 600000 } = params;
+  const { id, spec, language, orientation, quality, theme = "8bit", timeoutMs = 600000 } = params;
 
   const python = await resolvePythonPath();
   if (!python) return { ok: false, error: "No python interpreter found." };
+  const template = templatePath();
+  if (!template) return { ok: false, error: "Renderer template not found." };
 
   const workdir = mkdtempSync(join(tmpdir(), "visual-algos-"));
   try {
-    const scriptPath = join(workdir, "scene.py");
-    const mediaDir = join(workdir, "media");
-    writeFileSync(scriptPath, code, "utf-8");
+    // spec.json consumed by walkthrough.py
+    const specJson = {
+      title: spec.title,
+      language,
+      orientation,
+      theme,
+      code: spec.code,
+      array: spec.array,
+      target: spec.target ?? null,
+      steps: spec.steps,
+    };
+    writeFileSync(join(workdir, "spec.json"), JSON.stringify(specJson), "utf-8");
+    copyFileSync(template, join(workdir, "walkthrough.py"));
 
-    // Point Manim at a concrete ffmpeg (the bundled static binary from
-    // imageio-ffmpeg) via a local manim.cfg, so renders need no system ffmpeg.
     const ffmpegExe = await resolveFfmpegExe(python);
     if (ffmpegExe && ffmpegExe !== "ffmpeg") {
-      writeFileSync(
-        join(workdir, "manim.cfg"),
-        `[ffmpeg]\nffmpeg_executable = ${ffmpegExe}\n`,
-        "utf-8",
-      );
+      writeFileSync(join(workdir, "manim.cfg"), `[ffmpeg]\nffmpeg_executable = ${ffmpegExe}\n`, "utf-8");
     }
 
-    // Invoke manim as a python module so we don't depend on a console script on PATH.
     const args = [
-      "-m",
-      "manim",
-      "render",
-      QUALITY_FLAG[quality],
-      "--media_dir",
-      mediaDir,
-      "--format",
-      "mp4",
-      scriptPath,
-      sceneName,
+      "-m", "manim", "render", QUALITY_FLAG[quality],
+      "--media_dir", join(workdir, "media"),
+      "--format", "mp4",
+      join(workdir, "walkthrough.py"), "Walkthrough",
     ];
     const res = await run(python, args, { timeout: timeoutMs, cwd: workdir });
     if (res.code !== 0) {
       const tail = (res.stderr || res.stdout || "").trim().slice(-1200);
-      return { ok: false, error: `Manim render failed:\n${tail}` };
+      return { ok: false, error: `Render failed:\n${tail}` };
     }
 
     let mp4s: string[] = [];
     try {
-      mp4s = findMp4s(mediaDir);
+      mp4s = findMp4s(join(workdir, "media"));
     } catch {
       mp4s = [];
     }
     if (mp4s.length === 0) return { ok: false, error: "Render produced no video file." };
-
-    // Prefer the file whose name matches the scene; then the largest.
-    mp4s.sort((a, b) => {
-      const aMatch = a.includes(sceneName) ? 0 : 1;
-      const bMatch = b.includes(sceneName) ? 0 : 1;
-      if (aMatch !== bMatch) return aMatch - bMatch;
-      return statSync(b).size - statSync(a).size;
-    });
+    mp4s.sort((a, b) => statSync(b).size - statSync(a).size);
     const chosen = mp4s[0];
 
-    const { videoFile } = getPaths();
-    const dest = videoFile(id);
+    const dest = getPaths().videoFile(id);
     copyFileSync(chosen, dest);
 
     let duration: number | null = null;
@@ -141,7 +150,6 @@ export async function renderScene(params: {
     } catch {
       duration = null;
     }
-
     return { ok: true, videoPath: dest, durationSeconds: duration };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

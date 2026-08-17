@@ -4,14 +4,19 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        ink: "#0b0e14",
-        panel: "#12161f",
-        edge: "#1e2430",
-        accent: "#5b8cff",
-        accent2: "#8a6bff",
+        // 8-bit arcade palette
+        ink: "#101226",
+        panel: "#1a1d3a",
+        edge: "#343a70",
+        accent: "#7b6cff",
+        accent2: "#ff5db1",
       },
       fontFamily: {
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ['"Courier New"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
+      boxShadow: {
+        pixel: "4px 4px 0 0 rgba(0,0,0,0.55)",
       },
     },
   },

@@ -1,7 +1,12 @@
 import { randomUUID } from "crypto";
 import { renameSync, rmSync } from "fs";
 import { join } from "path";
-import type { CreateVisualizationInput, Visualization } from "@shared/types";
+import type {
+  CreateVisualizationInput,
+  Orientation,
+  RenderQuality,
+  Visualization,
+} from "@shared/types";
 import {
   deleteVisualization as storeDelete,
   getSettings,
@@ -9,9 +14,9 @@ import {
   patchVisualization,
   upsertVisualization,
 } from "./store";
-import { generateManimScene, repairManimScene } from "./gemini";
-import { validateManimCode, type GeneratedScene } from "./manimPrompt";
-import { renderScene } from "./manim";
+import { generateSpec, repairSpec } from "./gemini";
+import { validateSpec, type GeneratedSpec } from "./manimPrompt";
+import { renderSpec } from "./manim";
 import { synthesizeNarration } from "./elevenlabs";
 import { muxAudioOntoVideo } from "./av";
 import { resolveFfmpegExe, resolvePythonPath } from "./env";
@@ -20,24 +25,30 @@ import { getPaths } from "./paths";
 type ChangeListener = (viz: Visualization) => void;
 let listener: ChangeListener | null = null;
 
-/** Register the function used to push doc updates to the renderer. */
 export function onVisualizationChanged(fn: ChangeListener): void {
   listener = fn;
 }
-
 function emit(viz: Visualization | null): void {
   if (viz && listener) listener(viz);
 }
 
 const MAX_REPAIRS = 2;
+const THEME = "8bit";
+
+function norm(input: CreateVisualizationInput) {
+  const topic = (input.topic || "").trim();
+  const quality: RenderQuality = input.quality === "l" || input.quality === "h" ? input.quality : "m";
+  const orientation: Orientation = input.orientation === "portrait" ? "portrait" : "landscape";
+  const language = (input.language || "python").trim() || "python";
+  const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;
+  return { topic, quality, orientation, language, narrate };
+}
 
 export async function createVisualization(
   input: CreateVisualizationInput,
 ): Promise<{ id: string }> {
-  const topic = (input.topic || "").trim();
+  const { topic, quality, orientation, language, narrate } = norm(input);
   if (topic.length < 3) throw new Error("Please enter a longer topic.");
-  const quality = input.quality === "l" || input.quality === "h" ? input.quality : "m";
-  const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;
 
   const now = Date.now();
   const viz: Visualization = {
@@ -47,6 +58,8 @@ export async function createVisualization(
     description: "",
     status: "generating",
     quality,
+    language,
+    orientation,
     manimCode: null,
     sceneName: null,
     videoPath: null,
@@ -61,39 +74,41 @@ export async function createVisualization(
   upsertVisualization(viz);
   emit(viz);
 
-  void runPipeline(viz.id, topic, quality, narrate);
+  void runPipeline(viz.id, topic, quality, orientation, language, narrate);
   return { id: viz.id };
 }
 
-/**
- * Re-run the whole pipeline for an existing visualization (same topic/quality/
- * narration). Useful to retry after an error or just to get a fresh take.
- */
 export async function regenerateVisualization(id: string): Promise<{ id: string }> {
   const existing = getVisualization(id);
   if (!existing) throw new Error("Visualization not found.");
   const narrate = !!existing.narrate && !!getSettings().elevenLabsApiKey;
-
   emit(
     patchVisualization(id, {
       status: "generating",
       error: null,
       manimCode: null,
-      sceneName: null,
       videoPath: null,
       narration: null,
       hasAudio: false,
     }),
   );
-
-  void runPipeline(id, existing.topic, existing.quality, narrate);
+  void runPipeline(
+    id,
+    existing.topic,
+    existing.quality,
+    existing.orientation ?? "landscape",
+    existing.language ?? "python",
+    narrate,
+  );
   return { id };
 }
 
 async function runPipeline(
   id: string,
   topic: string,
-  quality: "l" | "m" | "h",
+  quality: RenderQuality,
+  orientation: Orientation,
+  language: string,
   narrate: boolean,
 ): Promise<void> {
   try {
@@ -101,97 +116,76 @@ async function runPipeline(
     if (!settings.geminiApiKey) throw new Error("No Gemini API key set. Add one in Settings.");
     const { geminiApiKey: key, geminiModel: model } = settings;
 
-    // 1. Generate the scene.
-    let scene = await generateManimScene(key, model, topic);
-    let check = validateManimCode(scene);
-    if (!check.ok) throw new Error(check.reason || "Generated code failed validation.");
+    // 1. Generate the structured spec (repair once if invalid).
+    let spec = await generateSpec(key, model, topic, language);
+    let check = validateSpec(spec);
+    if (!check.ok) {
+      try {
+        spec = await repairSpec(key, model, topic, language, check.reason || "invalid");
+        check = validateSpec(spec);
+      } catch {
+        /* keep original error */
+      }
+    }
+    if (!check.ok) throw new Error(check.reason || "Could not generate a valid walkthrough.");
 
-    emit(
-      patchVisualization(id, {
-        title: scene.title,
-        description: scene.description,
-        sceneName: scene.sceneName,
-        manimCode: scene.code,
-        narration: scene.narration || null,
-        status: "rendering",
-      }),
-    );
+    applySpec(id, spec, "rendering");
 
-    // 2. Render, repairing the code with Gemini if it fails.
-    let render = await renderScene({
-      id,
-      code: scene.code,
-      sceneName: scene.sceneName,
-      quality,
-    });
-
+    // 2. Render deterministically; repair+retry on failure.
+    let render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
     let attempt = 0;
     while (!render.ok && attempt < MAX_REPAIRS) {
       attempt += 1;
-      const repaired = await tryRepair(key, model, topic, scene, render.error || "");
-      if (!repaired) break;
-      scene = repaired;
-      emit(
-        patchVisualization(id, {
-          title: scene.title,
-          description: scene.description,
-          sceneName: scene.sceneName,
-          manimCode: scene.code,
-          narration: scene.narration || null,
-        }),
-      );
-      render = await renderScene({
-        id,
-        code: scene.code,
-        sceneName: scene.sceneName,
-        quality,
-      });
+      try {
+        const fixed = await repairSpec(key, model, topic, language, render.error || "render failed");
+        if (validateSpec(fixed).ok) {
+          spec = fixed;
+          applySpec(id, spec);
+        }
+      } catch {
+        break;
+      }
+      render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
     }
-
     if (!render.ok) throw new Error(render.error || "Render failed.");
 
-    // 3. Optional narration: synth via ElevenLabs and mux onto the video.
+    // 3. Optional narration.
     let hasAudio = false;
-    let duration = render.durationSeconds ?? null;
-    if (narrate && scene.narration && render.videoPath) {
-      const result = await addNarration(id, scene.narration, render.videoPath);
-      hasAudio = result.ok;
-      // Narration failure is non-fatal — we keep the silent video.
+    if (narrate && spec.narration && render.videoPath) {
+      hasAudio = (await addNarration(id, spec.narration, render.videoPath)).ok;
     }
 
     emit(
       patchVisualization(id, {
         status: "ready",
         videoPath: render.videoPath ?? null,
-        durationSeconds: duration,
+        durationSeconds: render.durationSeconds ?? null,
         hasAudio,
         error: null,
       }),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Generation failed.";
-    emit(patchVisualization(id, { status: "error", error: message }));
+    emit(
+      patchVisualization(id, {
+        status: "error",
+        error: err instanceof Error ? err.message : "Generation failed.",
+      }),
+    );
   }
 }
 
-async function tryRepair(
-  key: string,
-  model: string,
-  topic: string,
-  scene: GeneratedScene,
-  errorText: string,
-): Promise<GeneratedScene | null> {
-  try {
-    const fixed = await repairManimScene(key, model, topic, scene.code, errorText);
-    const check = validateManimCode(fixed);
-    if (!check.ok) return null;
-    return fixed;
-  } catch {
-    return null;
-  }
+function applySpec(id: string, spec: GeneratedSpec, status?: "rendering"): void {
+  emit(
+    patchVisualization(id, {
+      title: spec.title,
+      description: spec.description,
+      narration: spec.narration || null,
+      manimCode: spec.code.join("\n"),
+      ...(status ? { status } : {}),
+    }),
+  );
 }
 
-/** Synthesize narration and mux it onto the rendered video (in place). */
 async function addNarration(
   id: string,
   narration: string,
@@ -202,26 +196,22 @@ async function addNarration(
     const python = await resolvePythonPath();
     const ffmpeg = await resolveFfmpegExe(python);
     if (!ffmpeg) return { ok: false };
-
     const { videosDir } = getPaths();
     const audioPath = join(videosDir, `${id}.mp3`);
     const tmpOut = join(videosDir, `${id}.muxed.mp4`);
-
     await synthesizeNarration({
       apiKey: settings.elevenLabsApiKey,
       voiceId: settings.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM",
       text: narration,
       outPath: audioPath,
     });
-
     const mux = await muxAudioOntoVideo({ ffmpegExe: ffmpeg, videoPath, audioPath, outPath: tmpOut });
     if (!mux.ok) {
       rmSync(tmpOut, { force: true });
       rmSync(audioPath, { force: true });
       return { ok: false };
     }
-
-    renameSync(tmpOut, videoPath); // replace silent video with narrated one
+    renameSync(tmpOut, videoPath);
     rmSync(audioPath, { force: true });
     return { ok: true };
   } catch {

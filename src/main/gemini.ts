@@ -1,66 +1,60 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   RESPONSE_SCHEMA,
+  SCHEMA_CAST,
   SYSTEM_INSTRUCTION,
   buildRepairPrompt,
   buildUserPrompt,
-  type GeneratedScene,
+  normalizeSpec,
+  type GeneratedSpec,
 } from "./manimPrompt";
 
-function client(apiKey: string, model: string) {
+void RESPONSE_SCHEMA;
+
+function model(apiKey: string, modelName: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({
-    model,
+    model: modelName,
     systemInstruction: SYSTEM_INSTRUCTION,
     generationConfig: {
-      temperature: 0.6,
+      temperature: 0.5,
       responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA as unknown as { type: SchemaType },
+      responseSchema: SCHEMA_CAST,
     },
   });
 }
 
-function parseScene(text: string, topic: string): GeneratedScene {
-  let parsed: GeneratedScene;
+function parse(text: string, topic: string): GeneratedSpec {
+  let raw: Record<string, unknown>;
   try {
-    parsed = JSON.parse(text) as GeneratedScene;
+    raw = JSON.parse(text) as Record<string, unknown>;
   } catch {
     throw new Error("Gemini returned malformed JSON.");
   }
-  if (!parsed || typeof parsed.code !== "string" || typeof parsed.sceneName !== "string") {
-    throw new Error("Gemini response was missing required fields.");
-  }
-  return {
-    title: (parsed.title || topic).slice(0, 120),
-    description: (parsed.description || "").slice(0, 600),
-    sceneName: parsed.sceneName.trim(),
-    code: parsed.code,
-    narration: typeof parsed.narration === "string" ? parsed.narration.slice(0, 1200) : "",
-  };
+  return normalizeSpec(raw, topic);
 }
 
-/** Ask Gemini to write a Manim scene for the given topic. Throws on failure. */
-export async function generateManimScene(
+/** Ask Gemini for a structured algorithm-walkthrough spec. */
+export async function generateSpec(
   apiKey: string,
-  model: string,
+  modelName: string,
   topic: string,
-): Promise<GeneratedScene> {
-  const result = await client(apiKey, model).generateContent(buildUserPrompt(topic));
-  return parseScene(result.response.text(), topic);
+  language: string,
+): Promise<GeneratedSpec> {
+  const res = await model(apiKey, modelName).generateContent(buildUserPrompt(topic, language));
+  return parse(res.response.text(), topic);
 }
 
-/**
- * Ask Gemini to fix a scene that failed to render, given the code + traceback.
- */
-export async function repairManimScene(
+/** Ask Gemini to fix an invalid spec. */
+export async function repairSpec(
   apiKey: string,
-  model: string,
+  modelName: string,
   topic: string,
-  code: string,
-  errorText: string,
-): Promise<GeneratedScene> {
-  const result = await client(apiKey, model).generateContent(
-    buildRepairPrompt(topic, code, errorText),
+  language: string,
+  error: string,
+): Promise<GeneratedSpec> {
+  const res = await model(apiKey, modelName).generateContent(
+    buildRepairPrompt(topic, language, error),
   );
-  return parseScene(result.response.text(), topic);
+  return parse(res.response.text(), topic);
 }

@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Gauge, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
+import { Code2, Gauge, MonitorSmartphone, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
   formatUsd,
+  LANGUAGES,
+  ORIENTATIONS,
   type EnvStatus,
+  type Orientation,
   type RenderQuality,
 } from "@shared/types";
 import { Toggle } from "../components/Toggle";
+import { Dropdown } from "../components/Dropdown";
 
 const QUALITIES: { value: RenderQuality; label: string; hint: string }[] = [
   { value: "l", label: "Fast", hint: "480p" },
@@ -40,6 +44,8 @@ export function New({
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [quality, setQuality] = useState<RenderQuality>("m");
+  const [language, setLanguage] = useState("python");
+  const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [narrate, setNarrate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +63,8 @@ export function New({
       const { id } = await window.api.visualizations.create({
         topic: t,
         quality,
+        language,
+        orientation,
         narrate: narrate && hasElevenLabs,
       });
       navigate(`/v/${id}`);
@@ -142,6 +150,41 @@ export function New({
                 <div className="text-xs text-white/45">{q.hint}</div>
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+              <Code2 size={15} /> Language
+            </label>
+            <Dropdown
+              value={language}
+              options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))}
+              onChange={setLanguage}
+            />
+          </div>
+          <div>
+            <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+              <MonitorSmartphone size={15} /> Format
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {ORIENTATIONS.map((o) => (
+                <button
+                  type="button"
+                  key={o.id}
+                  onClick={() => setOrientation(o.id)}
+                  className={`rounded-2xl border px-3 py-2.5 text-left transition ${
+                    orientation === o.id
+                      ? "border-accent bg-accent/10"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                  }`}
+                >
+                  <div className="text-sm font-medium">{o.label}</div>
+                  <div className="text-xs text-white/45">{o.hint}</div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
