@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { EnvStatus, RenderQuality } from "@shared/types";
+import { motion } from "framer-motion";
+import { Gauge, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
+import {
+  estimateVideoCost,
+  formatUsd,
+  type EnvStatus,
+  type RenderQuality,
+} from "@shared/types";
+import { Toggle } from "../components/Toggle";
 
 const QUALITIES: { value: RenderQuality; label: string; hint: string }[] = [
   { value: "l", label: "Fast", hint: "480p" },
@@ -12,7 +20,7 @@ const EXAMPLES = [
   "Binary search on a sorted array",
   "Dijkstra's shortest path",
   "Quicksort partitioning",
-  "How a hash table handles collisions",
+  "Hash table collisions",
   "Breadth-first search on a graph",
 ];
 
@@ -20,14 +28,19 @@ export function New({
   canGenerate,
   hasKey,
   env,
+  hasElevenLabs,
+  model,
 }: {
   canGenerate: boolean;
   hasKey: boolean;
   env: EnvStatus | null;
+  hasElevenLabs: boolean;
+  model: string;
 }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
   const [quality, setQuality] = useState<RenderQuality>("m");
+  const [narrate, setNarrate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +54,11 @@ export function New({
     setSubmitting(true);
     setError(null);
     try {
-      const { id } = await window.api.visualizations.create({ topic: t, quality });
+      const { id } = await window.api.visualizations.create({
+        topic: t,
+        quality,
+        narrate: narrate && hasElevenLabs,
+      });
       navigate(`/v/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -51,32 +68,36 @@ export function New({
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">New video</h1>
+      <div className="mb-1 flex items-center gap-2">
+        <Wand2 size={20} className="text-accent" />
+        <h1 className="text-2xl font-semibold tracking-tight">New video</h1>
+      </div>
       <p className="mt-1 text-sm text-white/55">
         Describe a computer-science concept. The video shows the algorithm's code and highlights
-        each line as it runs, in sync with the visual. The clearer the ask, the better the animation.
+        each line as it runs, in sync with the visual.
       </p>
 
       {!canGenerate && (
-        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-          <p className="font-medium text-amber-200">Setup needed before you can generate</p>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-amber-100/80">
-            {!hasKey && <li>Add your Gemini API key.</li>}
-            {env && !env.python.ok && <li>Python 3.10+ was not found.</li>}
-            {env && env.python.ok && !env.manim.ok && (
-              <li>Manim is not installed for the detected Python.</li>
-            )}
-          </ul>
-          <Link
-            to="/settings"
-            className="mt-3 inline-block rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-300"
-          >
-            Open Settings
-          </Link>
+        <div className="mt-6 flex gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm">
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-300" />
+          <div>
+            <p className="font-medium text-amber-200">Setup needed before you can generate</p>
+            <ul className="mt-1.5 list-inside list-disc space-y-1 text-amber-100/80">
+              {!hasKey && <li>Add your Gemini API key.</li>}
+              {env && !env.python.ok && <li>Python 3.10+ was not found.</li>}
+              {env && env.python.ok && !env.manim.ok && <li>Manim is not installed.</li>}
+            </ul>
+            <Link
+              to="/settings"
+              className="mt-3 inline-block rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-300"
+            >
+              Open Settings
+            </Link>
+          </div>
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-6">
+      <form onSubmit={onSubmit} className="mt-8 space-y-7">
         <div>
           <label className="mb-2 block text-sm font-medium text-white/80">Topic</label>
           <textarea
@@ -85,7 +106,7 @@ export function New({
             rows={3}
             autoFocus
             placeholder="e.g. Visualize how merge sort recursively splits and merges an array"
-            className="w-full resize-none rounded-xl border border-edge bg-panel px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-accent"
+            className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm outline-none transition placeholder:text-white/30 focus:border-accent focus:bg-white/[0.05]"
           />
           <div className="mt-3 flex flex-wrap gap-2">
             {EXAMPLES.map((e) => (
@@ -93,7 +114,7 @@ export function New({
                 type="button"
                 key={e}
                 onClick={() => setTopic(e)}
-                className="rounded-full border border-edge bg-panel px-3 py-1 text-xs text-white/60 hover:border-accent/50 hover:text-white"
+                className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/60 transition hover:border-accent/50 hover:text-white"
               >
                 {e}
               </button>
@@ -102,17 +123,19 @@ export function New({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-white/80">Quality</label>
+          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+            <Gauge size={15} /> Quality
+          </label>
           <div className="grid grid-cols-3 gap-2">
             {QUALITIES.map((q) => (
               <button
                 type="button"
                 key={q.value}
                 onClick={() => setQuality(q.value)}
-                className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                className={`rounded-2xl border px-3 py-2.5 text-left transition ${
                   quality === q.value
                     ? "border-accent bg-accent/10"
-                    : "border-edge bg-panel hover:border-white/20"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
                 }`}
               >
                 <div className="text-sm font-medium">{q.label}</div>
@@ -122,21 +145,66 @@ export function New({
           </div>
         </div>
 
+        {/* Narration */}
+        <div
+          className={`flex items-center justify-between rounded-2xl border p-4 transition ${
+            narrate && hasElevenLabs ? "border-accent/40 bg-accent/[0.06]" : "border-white/10 bg-white/[0.03]"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <Volume2 size={18} className="mt-0.5 text-accent" />
+            <div>
+              <div className="text-sm font-medium">AI narration</div>
+              <div className="text-xs text-white/45">
+                {hasElevenLabs
+                  ? "Generate an ElevenLabs voiceover and add it to the video."
+                  : "Add an ElevenLabs API key in Settings to enable."}
+              </div>
+            </div>
+          </div>
+          <Toggle
+            checked={narrate && hasElevenLabs}
+            onChange={setNarrate}
+            disabled={!hasElevenLabs}
+          />
+        </div>
+
         {error && (
-          <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+          <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
             {error}
           </p>
         )}
 
-        <button
+        {(() => {
+          const est = estimateVideoCost(model, narrate && hasElevenLabs);
+          return (
+            <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-xs text-white/50">
+              <span>Estimated API cost</span>
+              <span className="text-white/70">
+                ~{formatUsd(est.total)}
+                <span className="text-white/40">
+                  {" "}
+                  ({formatUsd(est.gemini)} Gemini
+                  {est.narration > 0 ? ` + ${formatUsd(est.narration)} voice` : ""}, rendering free)
+                </span>
+              </span>
+            </div>
+          );
+        })()}
+
+        <motion.button
           type="submit"
           disabled={submitting || !canGenerate}
-          className="w-full rounded-xl bg-accent px-4 py-3 font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+          whileHover={{ scale: canGenerate ? 1.01 : 1 }}
+          whileTap={{ scale: canGenerate ? 0.99 : 1 }}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-accent to-accent2 px-4 py-3.5 font-medium text-white shadow-lg shadow-accent/20 disabled:opacity-50"
         >
+          <Sparkles size={18} />
           {submitting ? "Starting…" : "Generate video"}
-        </button>
+        </motion.button>
         <p className="text-center text-xs text-white/40">
           Rendering runs on your machine and can take a minute or two. You can leave this page.
+          Cost is approximate and depends on your API plan.
         </p>
       </form>
     </div>

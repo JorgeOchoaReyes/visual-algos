@@ -3,6 +3,12 @@ productName: Visual Algos
 directories:
   buildResources: build
   output: dist
+# Auto-update feed. electron-builder uploads installers + update metadata
+# (latest*.yml, blockmaps) to the matching GitHub Release when publishing.
+publish:
+  provider: github
+  owner: JorgeOchoaReyes
+  repo: visual-algos
 files:
   - "out/**/*"
   - "package.json"
@@ -13,6 +19,9 @@ extraResources:
   - from: "resources/pyruntime"
     to: "pyruntime"
     filter: ["**/*"]
+  # Runtime copy of the icon for the app window (Linux especially).
+  - from: "build/icon.png"
+    to: "icon.png"
 mac:
   category: public.app-category.education
   target:

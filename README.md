@@ -32,15 +32,35 @@ that can run the app.
 > Mathematical formulas via LaTeX (`MathTex`) aren't bundled (LaTeX is
 > gigabytes); the app animates with on-screen `Text` instead.
 
+## Features
+
+- **Code-follows-line videos** — the algorithm's source stays on screen and the
+  executing line is highlighted in sync with the data animation.
+- **Local rendering** — Manim runs on your machine via the bundled runtime; no
+  servers, no per-render fees.
+- **Model picker** — choose any Gemini model (dropdown of common ones, or enter
+  a custom id) in Settings.
+- **AI narration (optional)** — add an ElevenLabs key to generate a voiceover
+  that's muxed into the video.
+- **Auto-repair** — if generated code fails to render, the traceback is fed back
+  to Gemini and the scene is fixed and re-rendered (up to 2 tries).
+- **Regenerate** — retry any video (fresh take or after an error) from its page.
+- **Cost estimate** — an approximate per-video API cost is shown before you
+  generate.
+- **Auto-update** — installed apps update themselves from GitHub Releases.
+
 ## How it works
 
 1. You add a **Gemini API key** in Settings (stored locally in `userData`).
 2. On **New**, you enter a topic. The main process asks **Gemini** for a
-   self-contained Manim scene and runs a **static safety scan** on the code.
+   self-contained Manim scene (plus a narration script) and runs a **static
+   safety scan** on the code.
 3. It writes the scene to a temp dir and runs the **bundled Manim** (bundled
-   Python + bundled ffmpeg) to render an MP4, then copies it into the app's data
-   folder.
-4. The library and detail pages update **live** over IPC as the job moves
+   Python + bundled ffmpeg) to render an MP4. If the render fails, the code +
+   traceback go back to Gemini for a fix and it retries.
+4. If narration is on, the script is synthesized with **ElevenLabs** and muxed
+   onto the video with ffmpeg.
+5. The library and detail pages update **live** over IPC as the job moves
    through *Writing scene → Rendering → Ready*, then play the video.
 
 Everything is stored locally under Electron's per-user `userData` dir:
@@ -86,6 +106,28 @@ git tag v0.1.0 && git push origin v0.1.0
 
 You can also trigger it manually from the Actions tab to get build artifacts
 without cutting a release.
+
+## Updates (auto-update)
+
+Installed apps update themselves via
+[`electron-updater`](https://www.electron.build/auto-update). On a **tag** push,
+CI runs `electron-builder --publish always`, which uploads the installers **plus
+update metadata** (`latest*.yml` + blockmaps) to the GitHub Release for that
+version. Running apps check that feed on launch, download a newer version in the
+background, and show a "Restart to update" banner. On Windows the download is
+block-level differential, so if only the app code changed (not the ~440 MB
+Python runtime) the delta is small.
+
+To ship an update:
+
+```bash
+# bump "version" in package.json (e.g. 0.1.1), commit, then:
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+(The tag must match the `version` in `package.json`.) Auto-update needs
+published releases; unsigned builds still update, but users see the usual OS
+"unidentified developer" prompts until you add code signing.
 
 ## The bundled runtime
 

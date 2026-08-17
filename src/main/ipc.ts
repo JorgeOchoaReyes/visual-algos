@@ -11,6 +11,7 @@ import {
   createVisualization,
   deleteVisualizationAndVideo,
   onVisualizationChanged,
+  regenerateVisualization,
 } from "./service";
 
 /** Register all IPC handlers and set up the change broadcast to renderers. */
@@ -44,6 +45,8 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.vizCreate, (_e, input: CreateVisualizationInput) =>
     createVisualization(input),
   );
+
+  ipcMain.handle(IPC.vizRegenerate, (_e, id: string) => regenerateVisualization(id));
 
   ipcMain.handle(IPC.vizDelete, (_e, id: string) => {
     deleteVisualizationAndVideo(id);

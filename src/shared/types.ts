@@ -18,6 +18,12 @@ export interface Visualization {
   /** Absolute path to the rendered mp4 on disk (once ready). */
   videoPath: string | null;
   durationSeconds: number | null;
+  /** Narration script (present when narration was requested). */
+  narration: string | null;
+  /** Whether narration was requested for this video (persisted for regenerate). */
+  narrate: boolean;
+  /** True once narration audio was synthesized and muxed into the video. */
+  hasAudio: boolean;
   error: string | null;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
@@ -26,6 +32,8 @@ export interface Visualization {
 export interface CreateVisualizationInput {
   topic: string;
   quality: RenderQuality;
+  /** Generate + mux an ElevenLabs voiceover (requires an ElevenLabs key). */
+  narrate?: boolean;
 }
 
 export interface Settings {
@@ -33,7 +41,71 @@ export interface Settings {
   geminiModel: string;
   /** Optional explicit path to a python interpreter (else auto-detected). */
   pythonPath: string;
+  /** ElevenLabs API key for narration (optional). */
+  elevenLabsApiKey: string;
+  /** ElevenLabs voice id to narrate with. */
+  elevenLabsVoiceId: string;
 }
+
+/** Suggested Gemini models for the Settings dropdown ("Custom…" allows any). */
+export const GEMINI_MODELS: { id: string; label: string; note?: string }[] = [
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "fast · recommended" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", note: "highest quality" },
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+  { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+];
+
+// --- Rough per-video cost estimate ------------------------------------------
+// These are APPROXIMATE public API rates (USD) and change over time / vary by
+// plan. They exist to give a ballpark, not a bill. Rendering is local = free.
+const PRICING = {
+  // $ per 1M tokens {input, output}. Pro tiers cost more than Flash tiers.
+  geminiPro: { in: 1.25, out: 5.0 },
+  geminiFlash: { in: 0.15, out: 0.6 },
+  // Approx tokens used per generation attempt.
+  tokensIn: 1500,
+  tokensOut: 3500,
+  // ElevenLabs: ~$ per 1k characters; a narration is ~650 chars.
+  elevenPer1kChars: 0.15,
+  narrationChars: 650,
+};
+
+export interface CostEstimate {
+  gemini: number;
+  narration: number;
+  total: number;
+}
+
+/** Approximate cost for ONE generation attempt of a video. */
+export function estimateVideoCost(model: string, narrate: boolean): CostEstimate {
+  const isPro = /pro/i.test(model);
+  const rate = isPro ? PRICING.geminiPro : PRICING.geminiFlash;
+  const gemini =
+    (PRICING.tokensIn * rate.in + PRICING.tokensOut * rate.out) / 1_000_000;
+  const narration = narrate
+    ? (PRICING.narrationChars / 1000) * PRICING.elevenPer1kChars
+    : 0;
+  return { gemini, narration, total: gemini + narration };
+}
+
+/** Format a small dollar amount for display (e.g. "$0.002", "<$0.001"). */
+export function formatUsd(n: number): string {
+  if (n <= 0) return "$0";
+  if (n < 0.001) return "<$0.001";
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/** A few well-known public ElevenLabs voices ("Custom…" allows any id). */
+export const ELEVENLABS_VOICES: { id: string; label: string }[] = [
+  { id: "21m00Tcm4TlvDq8ikWAM", label: "Rachel (calm, narration)" },
+  { id: "AZnzlk1XvdvUeBnXmlld", label: "Domi (confident)" },
+  { id: "EXAVITQu4vr4xnSDxMaL", label: "Bella (soft)" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", label: "Josh (deep)" },
+  { id: "VR6AewLTigWG4xSOukaG", label: "Arnold (crisp)" },
+  { id: "pNInz6obpgDQGcFmaJgB", label: "Adam (narration)" },
+];
 
 export interface ToolStatus {
   ok: boolean;
@@ -71,8 +143,19 @@ export const IPC = {
   vizGet: "viz:get",
   vizCreate: "viz:create",
   vizDelete: "viz:delete",
+  vizRegenerate: "viz:regenerate",
   vizChanged: "viz:changed", // main -> renderer broadcast
   videoReveal: "video:reveal",
+  updateStatus: "update:status", // main -> renderer broadcast
+  updateInstall: "update:install",
 } as const;
+
+export type UpdateState =
+  | { status: "checking" }
+  | { status: "available"; version?: string }
+  | { status: "downloading"; percent?: number }
+  | { status: "ready"; version?: string }
+  | { status: "none" }
+  | { status: "error"; message?: string };
 
 export const MEDIA_PROTOCOL = "vizmedia";

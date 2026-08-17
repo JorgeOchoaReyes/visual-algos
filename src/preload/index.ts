@@ -5,6 +5,7 @@ import {
   type CreateVisualizationInput,
   type EnvStatus,
   type Settings,
+  type UpdateState,
   type Visualization,
 } from "@shared/types";
 
@@ -29,6 +30,8 @@ const api = {
     get: (id: string): Promise<Visualization | null> => ipcRenderer.invoke(IPC.vizGet, id),
     create: (input: CreateVisualizationInput): Promise<{ id: string }> =>
       ipcRenderer.invoke(IPC.vizCreate, input),
+    regenerate: (id: string): Promise<{ id: string }> =>
+      ipcRenderer.invoke(IPC.vizRegenerate, id),
     remove: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.vizDelete, id),
     onChanged: (cb: (viz: Visualization) => void): (() => void) => {
       const handler = (_e: unknown, viz: Visualization) => cb(viz);
@@ -41,6 +44,14 @@ const api = {
     url: (id: string): string => `${MEDIA_PROTOCOL}://${id}`,
     revealInFolder: (path: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IPC.videoReveal, path),
+  },
+  updates: {
+    onStatus: (cb: (state: UpdateState) => void): (() => void) => {
+      const handler = (_e: unknown, state: UpdateState) => cb(state);
+      ipcRenderer.on(IPC.updateStatus, handler);
+      return () => ipcRenderer.removeListener(IPC.updateStatus, handler);
+    },
+    install: (): Promise<void> => ipcRenderer.invoke(IPC.updateInstall),
   },
 };
 

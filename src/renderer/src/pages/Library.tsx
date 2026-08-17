@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Plus, Clapperboard } from "lucide-react";
 import { VisualizationCard } from "../components/VisualizationCard";
 import { useVisualizations } from "../lib/hooks";
 
@@ -7,40 +9,51 @@ export function Library() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-7 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Your videos</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Your videos</h1>
           <p className="mt-1 text-sm text-white/50">
-            Generated locally — nothing leaves your machine except the topic you send to Gemini.
+            Rendered locally — only the topic you enter is ever sent to Gemini.
           </p>
         </div>
-        <Link
-          to="/new"
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
-        >
-          New video
+        <Link to="/new">
+          <motion.span
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-accent/20"
+          >
+            <Plus size={16} /> New video
+          </motion.span>
         </Link>
       </div>
 
       {items === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-56 animate-pulse rounded-xl border border-edge bg-panel" />
+            <div key={i} className="h-56 animate-pulse rounded-2xl border border-white/[0.06] bg-panel/60" />
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="grid-bg rounded-2xl border border-dashed border-edge bg-panel/40 p-16 text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="grid-bg relative overflow-hidden rounded-3xl border border-dashed border-white/10 bg-panel/30 p-16 text-center"
+        >
+          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-accent to-accent2 shadow-lg shadow-accent/20">
+            <Clapperboard size={26} className="text-white" />
+          </div>
           <h2 className="text-lg font-medium">No videos yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-white/55">
-            Describe an algorithm and Visual Algos will animate it into a 3Blue1Brown-style video.
+            Describe an algorithm and Visual Algos animates it into a 3Blue1Brown-style video that
+            walks through the code line by line.
           </p>
           <Link
             to="/new"
-            className="mt-6 inline-block rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent/90"
+            className="mt-6 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20"
           >
-            Create your first one
+            <Plus size={16} /> Create your first one
           </Link>
-        </div>
+        </motion.div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((v) => (

@@ -1,9 +1,19 @@
 import { app, BrowserWindow, protocol, net } from "electron";
+import { existsSync } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { MEDIA_PROTOCOL } from "@shared/types";
 import { registerIpc } from "./ipc";
+import { initAutoUpdate } from "./updater";
 import { getPaths } from "./paths";
+
+/** Absolute path to the app icon, for the window (Linux/dev). */
+function iconPath(): string | undefined {
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, "icon.png")]
+    : [join(app.getAppPath(), "build", "icon.png")];
+  return candidates.find((p) => existsSync(p));
+}
 
 // Register our media scheme as privileged BEFORE the app is ready so the
 // renderer can stream rendered videos (with range requests for seeking).
@@ -23,6 +33,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#0b0e14",
     title: "Visual Algos",
+    icon: iconPath(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -53,6 +64,7 @@ app.whenReady().then(() => {
   });
 
   registerIpc();
+  initAutoUpdate();
   createWindow();
 
   app.on("activate", () => {

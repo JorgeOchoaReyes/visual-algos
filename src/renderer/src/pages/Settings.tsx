@@ -1,9 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import type { EnvStatus, Settings, ToolStatus } from "@shared/types";
+import {
+  Check,
+  Cpu,
+  Download,
+  KeyRound,
+  MonitorCog,
+  RefreshCw,
+  Volume2,
+} from "lucide-react";
+import {
+  ELEVENLABS_VOICES,
+  GEMINI_MODELS,
+  type EnvStatus,
+  type Settings,
+  type ToolStatus,
+} from "@shared/types";
+import { Dropdown } from "../components/Dropdown";
+
+const CUSTOM = "__custom__";
 
 function ToolRow({ name, tool }: { name: string; tool: ToolStatus }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-edge bg-ink/40 px-4 py-3">
+    <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
       <div>
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className={`h-2 w-2 rounded-full ${tool.ok ? "bg-emerald-400" : "bg-red-400"}`} />
@@ -24,6 +42,15 @@ function ToolRow({ name, tool }: { name: string; tool: ToolStatus }) {
   );
 }
 
+function SectionTitle({ icon: Icon, children }: { icon: typeof Cpu; children: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2 text-sm font-semibold text-white/85">
+      <Icon size={16} className="text-accent" />
+      {children}
+    </h2>
+  );
+}
+
 export function SettingsPage({
   settings,
   env,
@@ -37,18 +64,29 @@ export function SettingsPage({
 }) {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("gemini-2.5-flash");
+  const [customModel, setCustomModel] = useState(false);
   const [pythonPath, setPythonPath] = useState("");
+  const [elevenKey, setElevenKey] = useState("");
+  const [voiceId, setVoiceId] = useState(ELEVENLABS_VOICES[0].id);
+  const [customVoice, setCustomVoice] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [installing, setInstalling] = useState(false);
-  const [log, setLog] = useState<string>("");
+  const [log, setLog] = useState("");
   const logRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     if (!settings) return;
     setApiKey(settings.geminiApiKey);
     setModel(settings.geminiModel);
+    setCustomModel(!GEMINI_MODELS.some((m) => m.id === settings.geminiModel) && !!settings.geminiModel);
     setPythonPath(settings.pythonPath);
+    setElevenKey(settings.elevenLabsApiKey);
+    setVoiceId(settings.elevenLabsVoiceId);
+    setCustomVoice(
+      !ELEVENLABS_VOICES.some((v) => v.id === settings.elevenLabsVoiceId) &&
+        !!settings.elevenLabsVoiceId,
+    );
   }, [settings]);
 
   useEffect(() => {
@@ -56,9 +94,15 @@ export function SettingsPage({
   }, [log]);
 
   async function save() {
-    await onSave({ geminiApiKey: apiKey.trim(), geminiModel: model.trim(), pythonPath: pythonPath.trim() });
+    await onSave({
+      geminiApiKey: apiKey.trim(),
+      geminiModel: model.trim(),
+      pythonPath: pythonPath.trim(),
+      elevenLabsApiKey: elevenKey.trim(),
+      elevenLabsVoiceId: voiceId.trim(),
+    });
     setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+    setTimeout(() => setSaved(false), 1600);
     onRecheckEnv();
   }
 
@@ -75,57 +119,128 @@ export function SettingsPage({
     }
   }
 
+  const modelOptions = [
+    ...GEMINI_MODELS.map((m) => ({ value: m.id, label: m.label, note: m.note })),
+    { value: CUSTOM, label: "Custom…", note: "enter any model id" },
+  ];
+  const voiceOptions = [
+    ...ELEVENLABS_VOICES.map((v) => ({ value: v.id, label: v.label })),
+    { value: CUSTOM, label: "Custom…", note: "enter a voice id" },
+  ];
+
+  const inputCls =
+    "w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent";
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
       {/* Gemini */}
-      <section className="mt-8">
-        <h2 className="text-sm font-medium text-white/80">Gemini</h2>
-        <p className="mt-1 text-xs text-white/45">
+      <section className="mt-8 space-y-4">
+        <SectionTitle icon={KeyRound}>Gemini</SectionTitle>
+        <p className="-mt-2 text-xs text-white/45">
           Get a key at aistudio.google.com/apikey. Stored locally on this machine only.
         </p>
-        <div className="mt-4 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs text-white/60">API key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="AIza…"
-              className="w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs text-white/60">Model</label>
+        <div>
+          <label className="mb-1.5 block text-xs text-white/60">API key</label>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="AIza…"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+            <Cpu size={13} /> Model
+          </label>
+          <Dropdown
+            value={customModel ? CUSTOM : model}
+            options={modelOptions}
+            onChange={(v) => {
+              if (v === CUSTOM) {
+                setCustomModel(true);
+                setModel("");
+              } else {
+                setCustomModel(false);
+                setModel(v);
+              }
+            }}
+          />
+          {customModel && (
             <input
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm outline-none focus:border-accent"
+              placeholder="e.g. gemini-2.5-pro-exp"
+              className={`${inputCls} mt-2`}
             />
-          </div>
+          )}
+        </div>
+      </section>
+
+      {/* ElevenLabs */}
+      <section className="mt-10 space-y-4">
+        <SectionTitle icon={Volume2}>Narration (ElevenLabs)</SectionTitle>
+        <p className="-mt-2 text-xs text-white/45">
+          Optional. Add a key to generate a spoken voiceover and mux it into your videos. Get one
+          at elevenlabs.io. Stored locally.
+        </p>
+        <div>
+          <label className="mb-1.5 block text-xs text-white/60">API key</label>
+          <input
+            type="password"
+            value={elevenKey}
+            onChange={(e) => setElevenKey(e.target.value)}
+            placeholder="sk_…"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs text-white/60">Voice</label>
+          <Dropdown
+            value={customVoice ? CUSTOM : voiceId}
+            options={voiceOptions}
+            onChange={(v) => {
+              if (v === CUSTOM) {
+                setCustomVoice(true);
+                setVoiceId("");
+              } else {
+                setCustomVoice(false);
+                setVoiceId(v);
+              }
+            }}
+          />
+          {customVoice && (
+            <input
+              type="text"
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              placeholder="ElevenLabs voice id"
+              className={`${inputCls} mt-2`}
+            />
+          )}
         </div>
       </section>
 
       {/* Environment */}
-      <section className="mt-10">
+      <section className="mt-10 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-white/80">Render environment</h2>
+          <SectionTitle icon={MonitorCog}>Render environment</SectionTitle>
           <button
             onClick={onRecheckEnv}
-            className="rounded-md border border-edge px-2.5 py-1 text-xs text-white/60 hover:text-white"
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
           >
-            Re-check
+            <RefreshCw size={12} /> Re-check
           </button>
         </div>
-        <p className="mt-1 text-xs text-white/45">
-          Rendering runs locally with Manim. The installed app ships its own Python + Manim +
-          ffmpeg, so this should be green with no setup. (In a source build, use the button below
-          or point it at your own Python.)
+        <p className="-mt-1 text-xs text-white/45">
+          The installed app ships its own Python + Manim + ffmpeg, so this should be green with no
+          setup. (In a source build, use the button below or point it at your own Python.)
         </p>
 
-        <div className="mt-4 space-y-2">
+        <div className="space-y-2">
           {env ? (
             <>
               <ToolRow name="Python" tool={env.python} />
@@ -133,11 +248,11 @@ export function SettingsPage({
               <ToolRow name="ffmpeg" tool={env.ffmpeg} />
             </>
           ) : (
-            <div className="h-16 animate-pulse rounded-lg border border-edge bg-panel" />
+            <div className="h-16 animate-pulse rounded-xl border border-white/[0.06] bg-panel/60" />
           )}
         </div>
 
-        <div className="mt-4">
+        <div>
           <label className="mb-1.5 block text-xs text-white/60">
             Python path (optional — leave blank to auto-detect)
           </label>
@@ -146,31 +261,30 @@ export function SettingsPage({
             value={pythonPath}
             onChange={(e) => setPythonPath(e.target.value)}
             placeholder="/usr/bin/python3"
-            className="w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm outline-none focus:border-accent"
+            className={inputCls}
           />
         </div>
 
         {env && env.python.ok && !env.manim.ok && (
-          <div className="mt-4 rounded-lg border border-edge bg-panel p-4">
+          <div className="rounded-xl border border-white/[0.07] bg-panel/50 p-4">
             <p className="text-sm">
-              Manim isn't installed. You can let the app create a managed Python environment and
-              install it for you.
+              Manim isn't installed. Let the app create a managed Python environment and install it.
             </p>
             <p className="mt-1 text-xs text-white/45">
-              Note: Manim also needs system libraries (cairo, pango, ffmpeg, and LaTeX for
-              formulas). If the install fails, install those with your OS package manager and retry.
+              Manim also needs system libraries (cairo, pango, ffmpeg). If the install fails, add
+              those with your OS package manager and retry.
             </p>
             <button
               onClick={installManim}
               disabled={installing}
-              className="mt-3 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+              className="mt-3 flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
             >
-              {installing ? "Installing…" : "Install Manim for me"}
+              <Download size={15} /> {installing ? "Installing…" : "Install Manim for me"}
             </button>
             {log && (
               <pre
                 ref={logRef}
-                className="mt-3 max-h-56 overflow-auto rounded-lg border border-edge bg-[#0d1017] p-3 font-mono text-[11px] leading-relaxed text-white/70"
+                className="mt-3 max-h-56 overflow-auto rounded-lg border border-white/10 bg-[#0d1017] p-3 font-mono text-[11px] leading-relaxed text-white/70"
               >
                 {log}
               </pre>
@@ -182,11 +296,15 @@ export function SettingsPage({
       <div className="mt-10 flex items-center gap-3">
         <button
           onClick={save}
-          className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent/90"
+          className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20"
         >
           Save settings
         </button>
-        {saved && <span className="text-sm text-emerald-300">Saved</span>}
+        {saved && (
+          <span className="flex items-center gap-1 text-sm text-emerald-300">
+            <Check size={15} /> Saved
+          </span>
+        )}
       </div>
     </div>
   );

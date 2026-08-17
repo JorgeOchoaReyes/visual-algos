@@ -6,6 +6,8 @@ const DEFAULT_SETTINGS: Settings = {
   geminiApiKey: "",
   geminiModel: "gemini-2.5-flash",
   pythonPath: "",
+  elevenLabsApiKey: "",
+  elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM",
 };
 
 function readJson<T>(file: string, fallback: T): T {

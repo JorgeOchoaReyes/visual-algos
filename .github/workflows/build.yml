@@ -52,8 +52,11 @@ jobs:
       - name: Build app bundles
         run: npm run build
 
+      # On a tag: publish installers AND update metadata (latest*.yml + blockmaps)
+      # to the GitHub Release, so electron-updater can auto-update installed apps.
+      # On a manual run: just build, and upload artifacts below.
       - name: Package installer
-        run: npx electron-builder --publish never
+        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
         env:
           # Skip code signing (unsigned builds). To sign, provide the relevant
           # certificates as secrets and remove this.
@@ -70,15 +73,3 @@ jobs:
             dist/*.exe
             dist/*.AppImage
           if-no-files-found: ignore
-
-      - name: Attach installers to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

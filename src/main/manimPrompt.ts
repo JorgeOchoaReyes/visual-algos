@@ -5,6 +5,8 @@ export interface GeneratedScene {
   description: string;
   sceneName: string;
   code: string;
+  /** Optional voiceover script (~60-110 words). */
+  narration?: string;
 }
 
 /** Instructions given to Gemini so the output is one render-safe Manim scene. */
@@ -57,11 +59,28 @@ GENERAL CODE RULES
 - The code must run with no arguments via: manim render -q<quality> scene.py <ClassName>
 - Do NOT include explanatory prose, markdown, or comments outside the code field.
 
+CORRECTNESS (the code MUST run without errors)
+- The Python must be complete and executable as-is. Define EVERY variable
+  before you use it; do not reference names you never assigned. Double-check
+  every identifier is spelled consistently.
+- Keep the logic simple and favor short, obviously-correct helpers over clever
+  index arithmetic. It is better to hard-code the steps of a small example than
+  to write fragile generic bookkeeping. Fewer moving parts = fewer bugs.
+- Only index a VGroup/list within its bounds. Only call methods that exist in
+  Manim CE v0.18. Mentally run the construct() method start to finish and make
+  sure it cannot raise.
+
+NARRATION
+- Also write a short "narration" script: 60 to 110 words of plain spoken English
+  that explains what the viewer is seeing, in order. No stage directions, no
+  markdown, no code — just sentences a narrator would read aloud. It will be
+  turned into a voiceover, so keep it natural and paced to ~30-60 seconds.
+
 OUTPUT
 Return JSON matching the provided schema: a short human title, a one-to-two
 sentence description of what the video shows (mention it walks through the code
-line by line), the exact scene class name, and the complete Python code as a
-single string.`;
+line by line), the exact scene class name, the complete Python code as a single
+string, and the narration script.`;
 
 export const RESPONSE_SCHEMA = {
   type: "object",
@@ -76,12 +95,39 @@ export const RESPONSE_SCHEMA = {
       description: "Exact name of the Scene subclass defined in the code.",
     },
     code: { type: "string", description: "Complete, runnable Manim Python source." },
+    narration: {
+      type: "string",
+      description: "60-110 word spoken voiceover script (plain sentences).",
+    },
   },
-  required: ["title", "description", "sceneName", "code"],
+  required: ["title", "description", "sceneName", "code", "narration"],
 } as const;
 
 export function buildUserPrompt(topic: string): string {
   return `Topic: ${topic}\n\nCreate the Manim scene now.`;
+}
+
+/**
+ * Prompt to repair a scene that failed to render. We hand back the exact code
+ * and the Python traceback and ask for a corrected, complete scene.
+ */
+export function buildRepairPrompt(
+  topic: string,
+  code: string,
+  errorText: string,
+): string {
+  return [
+    `The following Manim scene for the topic "${topic}" failed to render.`,
+    "Fix the bug so it renders cleanly, keeping the same code-follows-line",
+    "style and the same scene class name. Return the COMPLETE corrected program",
+    "and an updated narration — not a diff.",
+    "",
+    "=== Error / traceback ===",
+    errorText.slice(-2000),
+    "",
+    "=== Current code ===",
+    code,
+  ].join("\n");
 }
 
 export const QUALITY_FLAG: Record<RenderQuality, string> = {
