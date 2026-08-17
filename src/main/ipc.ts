@@ -1,4 +1,4 @@
-import { ipcMain, shell, BrowserWindow } from "electron";
+import { app, ipcMain, shell, BrowserWindow } from "electron";
 import { IPC, type CreateVisualizationInput, type Settings } from "@shared/types";
 import {
   getSettings,
@@ -30,6 +30,8 @@ export function registerIpc(): void {
   });
 
   ipcMain.handle(IPC.settingsSet, (_e, patch: Partial<Settings>) => setSettings(patch));
+
+  ipcMain.handle(IPC.appVersion, () => app.getVersion());
 
   ipcMain.handle(IPC.envCheck, () => checkEnv());
 
