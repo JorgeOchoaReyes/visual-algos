@@ -5,6 +5,7 @@ import { pathToFileURL } from "url";
 import { MEDIA_PROTOCOL } from "@shared/types";
 import { registerIpc } from "./ipc";
 import { initAutoUpdate } from "./updater";
+import { ensureRenderer, registerSetup } from "./setup";
 import { getPaths } from "./paths";
 
 /** Absolute path to the app icon, for the window (Linux/dev). */
@@ -45,6 +46,11 @@ function createWindow(): void {
 
   win.on("ready-to-show", () => win.show());
 
+  // Once the UI is loaded, verify (and if needed auto-provision) the renderer.
+  win.webContents.once("did-finish-load", () => {
+    void ensureRenderer();
+  });
+
   // electron-vite provides the dev server URL in development.
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devUrl) {
@@ -64,6 +70,7 @@ app.whenReady().then(() => {
   });
 
   registerIpc();
+  registerSetup();
   initAutoUpdate();
   createWindow();
 

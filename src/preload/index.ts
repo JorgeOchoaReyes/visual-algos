@@ -5,6 +5,7 @@ import {
   type CreateVisualizationInput,
   type EnvStatus,
   type Settings,
+  type SetupState,
   type UpdateState,
   type Visualization,
 } from "@shared/types";
@@ -47,6 +48,14 @@ const api = {
   },
   app: {
     version: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
+  },
+  setup: {
+    onStatus: (cb: (state: SetupState) => void): (() => void) => {
+      const handler = (_e: unknown, state: SetupState) => cb(state);
+      ipcRenderer.on(IPC.setupStatus, handler);
+      return () => ipcRenderer.removeListener(IPC.setupStatus, handler);
+    },
+    retry: (): Promise<void> => ipcRenderer.invoke(IPC.setupRetry),
   },
   updates: {
     onStatus: (cb: (state: UpdateState) => void): (() => void) => {

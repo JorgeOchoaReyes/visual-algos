@@ -175,7 +175,15 @@ export const IPC = {
   videoReveal: "video:reveal",
   updateStatus: "update:status", // main -> renderer broadcast
   updateInstall: "update:install",
+  setupStatus: "setup:status", // main -> renderer broadcast
+  setupRetry: "setup:retry",
 } as const;
+
+export type SetupState =
+  | { phase: "checking" }
+  | { phase: "installing"; message?: string; log?: string }
+  | { phase: "ready" }
+  | { phase: "error"; message?: string };
 
 export type UpdateState =
   | { status: "checking" }
