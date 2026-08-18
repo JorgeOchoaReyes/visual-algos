@@ -158,6 +158,11 @@ export interface Validated {
   reason?: string;
 }
 
+/**
+ * Structural validation — a HARD gate. If this fails the spec cannot render
+ * (missing code, no example, out-of-range line numbers), so the pipeline must
+ * repair or error rather than produce a broken video.
+ */
 export function validateSpec(spec: GeneratedSpec): Validated {
   if (spec.code.length < 3) return { ok: false, reason: "Too few code lines." };
   if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
@@ -167,9 +172,17 @@ export function validateSpec(spec: GeneratedSpec): Validated {
       return { ok: false, reason: `Step references line ${s.line}, out of range.` };
     }
   }
-  // The right-side visualization must actually move. Reject specs whose steps
-  // rarely touch highlight/pointers/setArray (they render as "code jumps but
-  // nothing changes") so the pipeline repairs them.
+  return { ok: true };
+}
+
+/**
+ * Quality check — a SOFT gate. A structurally valid spec whose right-side
+ * visualization rarely moves (steps that only change 'line'/'caption') renders
+ * fine, just less usefully. The pipeline uses this to TRY a repair, but still
+ * renders the original if the repair doesn't land — a plain video beats an
+ * error screen.
+ */
+export function vizChangesEnough(spec: GeneratedSpec): Validated {
   const changing = spec.steps.filter(
     (s) =>
       (s.highlight && s.highlight.length > 0) ||
@@ -180,7 +193,7 @@ export function validateSpec(spec: GeneratedSpec): Validated {
     return {
       ok: false,
       reason:
-        "Most steps don't update the visualization. Every step must include highlight and/or pointers (and setArray on writes).",
+        "Most steps don't update the visualization. Every step should include highlight and/or pointers (and setArray on writes).",
     };
   }
   return { ok: true };

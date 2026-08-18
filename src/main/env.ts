@@ -71,20 +71,29 @@ function pythonCandidates(): string[] {
  * ships with imageio-ffmpeg inside the bundled runtime, then a system ffmpeg.
  * Returns null if none is found.
  */
+/** Ask a python for the static ffmpeg binary that ships with imageio-ffmpeg. */
+async function imageioFfmpeg(py: string | null): Promise<string | null> {
+  if (!py) return null;
+  const res = await run(
+    py,
+    ["-c", "import imageio_ffmpeg, sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())"],
+    10000,
+  );
+  const p = res.stdout.trim();
+  return res.code === 0 && p && existsSync(p) ? p : null;
+}
+
 export async function resolveFfmpegExe(pythonPath: string | null): Promise<string | null> {
-  if (pythonPath) {
-    const bundled = await run(
-      pythonPath,
-      ["-c", "import imageio_ffmpeg, sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())"],
-      10000,
-    );
-    if (bundled.code === 0 && bundled.stdout.trim() && existsSync(bundled.stdout.trim())) {
-      return bundled.stdout.trim();
-    }
-  }
-  const sys = await run("ffmpeg", ["-version"], 8000);
-  if (sys.code === 0) return "ffmpeg";
-  return null;
+  // The render python (a managed venv) may not have imageio-ffmpeg, but the
+  // bundled runtime always does — so check both, then a system ffmpeg.
+  return (
+    (await imageioFfmpeg(pythonPath)) ||
+    (await imageioFfmpeg(bundledPython())) ||
+    (await (async () => {
+      const sys = await run("ffmpeg", ["-version"], 8000);
+      return sys.code === 0 ? "ffmpeg" : null;
+    })())
+  );
 }
 
 async function importsManim(py: string): Promise<boolean> {
@@ -147,21 +156,17 @@ async function detectFfmpeg(pythonPath: string | null): Promise<ToolStatus> {
     const version = first.replace(/^ffmpeg version\s*/i, "").split(" ")[0] || null;
     return { ok: true, path: "ffmpeg", version, detail: "system ffmpeg" };
   }
-  // Manim can fall back to imageio-ffmpeg's bundled binary.
-  if (pythonPath) {
-    const bundled = await run(
-      pythonPath,
-      ["-c", "import imageio_ffmpeg, sys; sys.stdout.write(imageio_ffmpeg.get_ffmpeg_exe())"],
-      10000,
-    );
-    if (bundled.code === 0 && bundled.stdout.trim()) {
-      return {
-        ok: true,
-        path: bundled.stdout.trim(),
-        version: null,
-        detail: "bundled via imageio-ffmpeg",
-      };
-    }
+  // Manim can fall back to imageio-ffmpeg's static binary. The render python (a
+  // managed venv) may lack imageio-ffmpeg, but the bundled runtime always has
+  // it — so check both.
+  const bundled = (await imageioFfmpeg(pythonPath)) || (await imageioFfmpeg(bundledPython()));
+  if (bundled) {
+    return {
+      ok: true,
+      path: bundled,
+      version: null,
+      detail: "bundled via imageio-ffmpeg",
+    };
   }
   return { ok: false, path: null, version: null, detail: "ffmpeg not found." };
 }
@@ -220,7 +225,9 @@ export async function installManim(onLog: (line: string) => void): Promise<EnvSt
   await run(py, ["-m", "pip", "install", "--upgrade", "pip"], 180000);
 
   onLog("Installing manim (this can take several minutes)…");
-  const install = await run(py, ["-m", "pip", "install", "manim"], 1200000);
+  // Install imageio-ffmpeg alongside manim so the managed venv carries its own
+  // static ffmpeg (needed for rendering and audio muxing) with no system ffmpeg.
+  const install = await run(py, ["-m", "pip", "install", "manim", "imageio-ffmpeg"], 1200000);
   onLog(install.stdout.slice(-2000));
   if (install.code !== 0) {
     onLog(install.stderr.slice(-2000));
