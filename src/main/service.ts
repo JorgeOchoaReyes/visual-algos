@@ -15,7 +15,7 @@ import {
   upsertVisualization,
 } from "./store";
 import { generateSpec, repairSpec } from "./gemini";
-import { validateSpec, type GeneratedSpec } from "./manimPrompt";
+import { validateSpec, vizChangesEnough, type GeneratedSpec } from "./manimPrompt";
 import { renderSpec } from "./manim";
 import { synthesizeNarration } from "./elevenlabs";
 import { muxAudioOntoVideo } from "./av";
@@ -117,18 +117,43 @@ async function runPipeline(
     if (!settings.geminiApiKey) throw new Error("No Gemini API key set. Add one in Settings.");
     const { geminiApiKey: key, geminiModel: model } = settings;
 
-    // 1. Generate the structured spec (repair once if invalid).
+    // 1. Generate the structured spec. Repair once if it's structurally
+    //    invalid (a hard failure — can't render). Then, if it's valid but the
+    //    visualization barely moves, TRY one repair to enrich it — but keep the
+    //    valid original if the repair doesn't land, so we always ship a video.
     let spec = await generateSpec(key, model, topic, language);
     let check = validateSpec(spec);
     if (!check.ok) {
       try {
-        spec = await repairSpec(key, model, topic, language, check.reason || "invalid");
-        check = validateSpec(spec);
+        const repaired = await repairSpec(key, model, topic, language, check.reason || "invalid");
+        if (validateSpec(repaired).ok) {
+          spec = repaired;
+          check = { ok: true };
+        }
       } catch {
         /* keep original error */
       }
     }
     if (!check.ok) throw new Error(check.reason || "Could not generate a valid walkthrough.");
+
+    if (!vizChangesEnough(spec).ok) {
+      try {
+        const enriched = await repairSpec(
+          key,
+          model,
+          topic,
+          language,
+          vizChangesEnough(spec).reason || "thin visualization",
+        );
+        // Only adopt the enriched spec if it's structurally sound AND actually
+        // improves the visualization; otherwise render the original as-is.
+        if (validateSpec(enriched).ok && vizChangesEnough(enriched).ok) {
+          spec = enriched;
+        }
+      } catch {
+        /* render the original valid spec */
+      }
+    }
 
     applySpec(id, spec, "rendering");
 
