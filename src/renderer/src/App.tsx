@@ -2,6 +2,7 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Nav } from "./components/Nav";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { SetupBanner } from "./components/SetupBanner";
 import { Library } from "./pages/Library";
 import { New } from "./pages/New";
 import { Detail } from "./pages/Detail";
@@ -72,6 +73,7 @@ export default function App() {
         Visual Algos · renders locally with Manim + Gemini
       </footer>
       <UpdateBanner />
+      <SetupBanner />
     </div>
   );
 }

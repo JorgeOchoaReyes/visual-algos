@@ -286,11 +286,7 @@ export function SettingsPage({
               Manim also needs system libraries (cairo, pango, ffmpeg). If the install fails, add
               those with your OS package manager and retry.
             </p>
-            <button
-              onClick={installManim}
-              disabled={installing}
-              className="mt-3 flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
-            >
+            <button onClick={installManim} disabled={installing} className="btn8 mt-3">
               <Download size={15} /> {installing ? "Installing…" : "Install Manim for me"}
             </button>
             {log && (
@@ -306,10 +302,7 @@ export function SettingsPage({
       </section>
 
       <div className="mt-10 flex items-center gap-3">
-        <button
-          onClick={save}
-          className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20"
-        >
+        <button onClick={save} className="btn8">
           Save settings
         </button>
         {saved && (

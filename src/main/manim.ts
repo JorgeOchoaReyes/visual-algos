@@ -141,8 +141,19 @@ export async function renderSpec(params: {
     mp4s.sort((a, b) => statSync(b).size - statSync(a).size);
     const chosen = mp4s[0];
 
+    // Copy to the library, adding +faststart (moov atom at the front) so the
+    // video seeks/scrubs smoothly when streamed over the media protocol.
     const dest = getPaths().videoFile(id);
-    copyFileSync(chosen, dest);
+    let fastStarted = false;
+    if (ffmpegExe) {
+      const ff = await run(
+        ffmpegExe,
+        ["-y", "-i", chosen, "-c", "copy", "-movflags", "+faststart", dest],
+        { timeout: 120000 },
+      );
+      fastStarted = ff.code === 0 && existsSync(dest);
+    }
+    if (!fastStarted) copyFileSync(chosen, dest);
 
     let duration: number | null = null;
     try {

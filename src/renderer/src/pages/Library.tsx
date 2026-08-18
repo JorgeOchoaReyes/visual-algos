@@ -16,14 +16,8 @@ export function Library() {
             Rendered locally — only the topic you enter is ever sent to Gemini.
           </p>
         </div>
-        <Link to="/new">
-          <motion.span
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-accent/20"
-          >
-            <Plus size={16} /> New video
-          </motion.span>
+        <Link to="/new" className="btn8">
+          <Plus size={16} /> New video
         </Link>
       </div>
 
@@ -39,18 +33,15 @@ export function Library() {
           animate={{ opacity: 1, scale: 1 }}
           className="grid-bg relative overflow-hidden rounded-3xl border border-dashed border-white/10 bg-panel/30 p-16 text-center"
         >
-          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-accent to-accent2 shadow-lg shadow-accent/20">
-            <Clapperboard size={26} className="text-white" />
+          <div className="tile8 mx-auto mb-4 grid h-14 w-14 place-items-center">
+            <Clapperboard size={26} className="text-[#05040b]" />
           </div>
           <h2 className="text-lg font-medium">No videos yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-white/55">
             Describe an algorithm and Visual Algos animates it into a 3Blue1Brown-style video that
             walks through the code line by line.
           </p>
-          <Link
-            to="/new"
-            className="mt-6 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-accent to-accent2 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-accent/20"
-          >
+          <Link to="/new" className="btn8 mt-6">
             <Plus size={16} /> Create your first one
           </Link>
         </motion.div>

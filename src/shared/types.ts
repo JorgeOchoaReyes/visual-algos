@@ -46,6 +46,8 @@ export interface Visualization {
   narrate: boolean;
   /** True once narration audio was synthesized and muxed into the video. */
   hasAudio: boolean;
+  /** Non-fatal note (e.g. why narration didn't attach). */
+  note: string | null;
   error: string | null;
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
@@ -175,7 +177,15 @@ export const IPC = {
   videoReveal: "video:reveal",
   updateStatus: "update:status", // main -> renderer broadcast
   updateInstall: "update:install",
+  setupStatus: "setup:status", // main -> renderer broadcast
+  setupRetry: "setup:retry",
 } as const;
+
+export type SetupState =
+  | { phase: "checking" }
+  | { phase: "installing"; message?: string; log?: string }
+  | { phase: "ready" }
+  | { phase: "error"; message?: string };
 
 export type UpdateState =
   | { status: "checking" }

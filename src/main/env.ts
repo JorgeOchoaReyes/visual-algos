@@ -87,13 +87,25 @@ export async function resolveFfmpegExe(pythonPath: string | null): Promise<strin
   return null;
 }
 
-/** Resolve the first working python interpreter path. */
+async function importsManim(py: string): Promise<boolean> {
+  const res = await run(py, ["-c", "import manim"], 20000);
+  return res.code === 0;
+}
+
+/**
+ * Resolve the python interpreter to use. Prefer one that can actually import
+ * manim (so rendering works); if none can, fall back to the first that runs (so
+ * the auto-setup has a base to build a venv from).
+ */
 export async function resolvePythonPath(): Promise<string | null> {
+  let firstRunnable: string | null = null;
   for (const cand of pythonCandidates()) {
     const res = await run(cand, ["--version"], 8000);
-    if (res.code === 0) return cand;
+    if (res.code !== 0) continue;
+    if (firstRunnable === null) firstRunnable = cand;
+    if (await importsManim(cand)) return cand;
   }
-  return null;
+  return firstRunnable;
 }
 
 async function detectPython(): Promise<{ status: ToolStatus; path: string | null }> {
@@ -173,19 +185,23 @@ export async function checkEnv(): Promise<EnvStatus> {
 export async function installManim(onLog: (line: string) => void): Promise<EnvStatus> {
   const { venvDir } = getPaths();
 
-  // 1. Find a base python to build the venv from.
-  let basePython: string | null = null;
-  for (const cand of ["python3", "python"]) {
-    const res = await run(cand, ["--version"], 8000);
-    if (res.code === 0) {
-      basePython = cand;
-      break;
+  // 1. Base python for the venv. Prefer the bundled interpreter so this works
+  //    even when the user has no system Python installed.
+  let basePython: string | null = bundledPython();
+  if (!basePython) {
+    for (const cand of ["python3", "python"]) {
+      const res = await run(cand, ["--version"], 8000);
+      if (res.code === 0) {
+        basePython = cand;
+        break;
+      }
     }
   }
   if (!basePython) {
-    onLog("No system python found. Install Python 3.10+ first, then retry.");
+    onLog("No Python found (bundled or system). Reinstall the app, or install Python 3.10+.");
     return checkEnv();
   }
+  onLog(`Using base interpreter: ${basePython}`);
 
   onLog(`Creating virtual environment with ${basePython}…`);
   const venv = await run(basePython, ["-m", "venv", venvDir], 120000);

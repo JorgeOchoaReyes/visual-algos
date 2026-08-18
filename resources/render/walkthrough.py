@@ -168,7 +168,16 @@ class Walkthrough(Scene):
             return r.move_to([panel.get_center()[0], ln.get_center()[1], 0])
 
         highlight = hl_for(0).set_opacity(0)
-        caption = Text("", font=FONT, font_size=22, color=th["text"]).to_edge(DOWN, buff=0.6)
+
+        cap_w = config.frame_width - 1.2
+
+        def make_caption(txt):
+            c = Text(txt or " ", font=FONT, font_size=20, color=th["text"])
+            if c.width > cap_w:
+                c.scale_to_fit_width(cap_w)  # never overflow the frame width
+            return c.to_edge(DOWN, buff=0.55)
+
+        caption = make_caption("")
 
         # Intro
         self.play(FadeIn(title, shift=DOWN * 0.2), run_time=0.5)
@@ -221,8 +230,9 @@ class Walkthrough(Scene):
                     pointers[name] = p
                     anims.append(FadeIn(p, shift=UP * 0.1))
 
-            new_cap = Text(step.get("caption", ""), font=FONT, font_size=22, color=th["text"]).to_edge(DOWN, buff=0.6)
-            anims += [FadeOut(caption, run_time=0.2), FadeIn(new_cap)]
+            new_cap = make_caption(step.get("caption", ""))
+            self.remove(caption)  # instant swap — no crossfade overlap
+            anims.append(FadeIn(new_cap))
 
             self.play(*anims, run_time=0.8)
             caption = new_cap

@@ -1,14 +1,13 @@
 import { Link, NavLink } from "react-router-dom";
-import { motion } from "framer-motion";
 import { LayoutGrid, Settings as SettingsIcon, Sparkles } from "lucide-react";
 
 function Logo() {
   return (
-    <span className="relative grid h-8 w-8 place-items-center overflow-hidden rounded-lg bg-gradient-to-br from-accent to-accent2 shadow-lg shadow-accent/20">
+    <span className="tile8 relative grid h-8 w-8 place-items-center overflow-hidden">
       <span className="flex items-end gap-[2px]">
-        <span className="h-2 w-[3px] rounded-sm bg-white/70" />
-        <span className="h-3 w-[3px] rounded-sm bg-white/85" />
-        <span className="h-4 w-[3px] rounded-sm bg-white" />
+        <span className="h-2 w-[3px] bg-[#05040b]/70" />
+        <span className="h-3 w-[3px] bg-[#05040b]/85" />
+        <span className="h-4 w-[3px] bg-[#05040b]" />
       </span>
     </span>
   );
@@ -52,14 +51,8 @@ export function Nav({ envReady }: { envReady: boolean }) {
             </span>
             Settings
           </NavLink>
-          <Link to="/new" className="ml-1">
-            <motion.span
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-accent to-accent2 px-3.5 py-1.5 text-sm font-medium text-white shadow-lg shadow-accent/20"
-            >
-              <Sparkles size={15} /> New video
-            </motion.span>
+          <Link to="/new" className="btn8 ml-1">
+            <Sparkles size={15} /> New video
           </Link>
         </nav>
       </div>

@@ -4,12 +4,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // 8-bit arcade palette
-        ink: "#101226",
-        panel: "#1a1d3a",
-        edge: "#343a70",
-        accent: "#7b6cff",
-        accent2: "#ff5db1",
+        // 8-bit / cyberpunk neon palette
+        ink: "#080611",
+        panel: "#150f2b",
+        edge: "#382d63",
+        accent: "#22e6ff",
+        accent2: "#ff3ca6",
       },
       fontFamily: {
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
