@@ -154,8 +154,12 @@ class Walkthrough(Scene):
             code.next_to(title, DOWN, buff=0.6)
             array_grp.next_to(code, DOWN, buff=1.0)
         else:
-            code.to_edge(LEFT, buff=0.55).shift(DOWN * 0.1)
-            array_grp.to_edge(RIGHT, buff=0.7).shift(UP * 1.6)
+            # Center the code block vertically in the frame. (It's built with
+            # row 0 at the origin growing downward, so its natural center sits
+            # well below y=0 — set_y re-centers it regardless of line count so
+            # the panel never runs off the bottom edge.)
+            code.to_edge(LEFT, buff=0.55).set_y(-0.2)
+            array_grp.to_edge(RIGHT, buff=0.7).shift(UP * 0.9)
         if target is not None:
             tgt.next_to(array_grp, UP, buff=0.5)
 
@@ -168,16 +172,6 @@ class Walkthrough(Scene):
             return r.move_to([panel.get_center()[0], ln.get_center()[1], 0])
 
         highlight = hl_for(0).set_opacity(0)
-
-        cap_w = config.frame_width - 1.2
-
-        def make_caption(txt):
-            c = Text(txt or " ", font=FONT, font_size=20, color=th["text"])
-            if c.width > cap_w:
-                c.scale_to_fit_width(cap_w)  # never overflow the frame width
-            return c.to_edge(DOWN, buff=0.55)
-
-        caption = make_caption("")
 
         # Intro
         self.play(FadeIn(title, shift=DOWN * 0.2), run_time=0.5)
@@ -230,12 +224,7 @@ class Walkthrough(Scene):
                     pointers[name] = p
                     anims.append(FadeIn(p, shift=UP * 0.1))
 
-            new_cap = make_caption(step.get("caption", ""))
-            self.remove(caption)  # instant swap — no crossfade overlap
-            anims.append(FadeIn(new_cap))
-
             self.play(*anims, run_time=0.8)
-            caption = new_cap
             self.wait(0.5)
 
         self.wait(1.2)
