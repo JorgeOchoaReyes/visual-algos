@@ -72,10 +72,18 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only for manual runs that DON'T publish a release. A publishing run
+      # (release/tag) already uploads the installers straight to the GitHub
+      # Release above — release assets don't count against the Actions artifact
+      # storage quota, but a second copy here does (and was failing the whole
+      # run once the quota filled up). Short retention keeps manual builds from
+      # piling up.
       - name: Upload build artifacts
+        if: ${{ !(inputs.publish || startsWith(github.ref, 'refs/tags/')) }}
         uses: actions/upload-artifact@v4
         with:
           name: visual-algos-${{ matrix.name }}
+          retention-days: 5
           path: |
             dist/*.dmg
             dist/*.zip
