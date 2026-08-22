@@ -28,10 +28,14 @@ left, a small array visualization on the right, and an ordered list of steps
 that each highlight ONE code line and update the array state in sync.
 
 Rules:
-- Choose ONE concrete, SHORT example (an array of 5–8 integers). Keep it small so
-  the whole run is quick.
-- Write the algorithm as 6–14 SHORT lines of real, correct code in the requested
-  language. This is what appears on screen and gets highlighted line by line.
+- Choose ONE concrete example. For array algorithms use 8–9 integers so the
+  behaviour is clearly visible (not so few that it looks trivial).
+- Write the algorithm as COMPLETE, correct, runnable code (6–20 SHORT lines) in
+  the requested language. This is what appears on screen and gets highlighted
+  line by line. NEVER stub or hide logic behind a placeholder or a call to a
+  helper you don't show (e.g. no "_merge(...)  # merge logic is complex"): if the
+  algorithm needs a merge/partition/heapify step, WRITE ITS FULL BODY so a viewer
+  can actually understand how it works. Prefer one self-contained function.
 - Produce an ordered list of steps that walk the example to completion (actually
   loop through the iterations — don't skip to the end). Each step has:
     • line: the 1-based line number in "code" that is executing at this step.
@@ -113,7 +117,10 @@ export function buildRepairPrompt(topic: string, language: string, error: string
 /** Convert the raw Gemini object (pointers as list, setArray) into our form. */
 export function normalizeSpec(raw: Record<string, unknown>, topic: string): GeneratedSpec {
   const codeIn = Array.isArray(raw.code) ? (raw.code as unknown[]) : [];
-  const code = codeIn.map((l) => String(l)).slice(0, 14);
+  // Allow enough lines for a complete algorithm (e.g. merge sort's full merge
+  // routine) so the AI never has to stub logic out to fit — the code panel
+  // scales to fit whatever it emits.
+  const code = codeIn.map((l) => String(l)).slice(0, 22);
   const arrayIn = Array.isArray(raw.array) ? (raw.array as unknown[]) : [];
   const array = arrayIn.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 9);
 
@@ -131,7 +138,10 @@ export function normalizeSpec(raw: Record<string, unknown>, topic: string): Gene
       ? (s.setArray as unknown[]).map((n) => Number(n))
       : undefined;
     return {
-      line: Math.max(1, Number(s.line) || 1),
+      // Clamp into the valid code range: an AI that references a line past the
+      // end (or that got truncated) shouldn't fail the whole render — the step
+      // just points at the last line instead.
+      line: Math.min(Math.max(1, Number(s.line) || 1), Math.max(1, code.length)),
       caption: typeof s.caption === "string" ? s.caption : "",
       highlight: Array.isArray(s.highlight)
         ? (s.highlight as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n))

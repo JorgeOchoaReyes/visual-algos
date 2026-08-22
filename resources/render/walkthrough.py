@@ -75,7 +75,7 @@ def tok_color(t):
 class Walkthrough(Scene):
     def construct(self):
         th = TH
-        lines = SPEC.get("code", [])[:14]
+        lines = SPEC.get("code", [])[:22]
         values = list(SPEC.get("array", []))[:9]
         target = SPEC.get("target")
         steps = SPEC.get("steps", [])[:44]
