@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
-import { renameSync, rmSync } from "fs";
+import { mkdtempSync, renameSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import type {
   CreateVisualizationInput,
@@ -17,7 +18,7 @@ import {
 import { generateSpec, repairSpec } from "./gemini";
 import { validateSpec, vizChangesEnough, type GeneratedSpec } from "./manimPrompt";
 import { renderSpec } from "./manim";
-import { synthesizeNarration } from "./elevenlabs";
+import { buildAlignedNarration } from "./narration";
 import { muxAudioOntoVideo } from "./av";
 import { resolveFfmpegExe, resolvePythonPath } from "./env";
 import { getPaths } from "./paths";
@@ -157,7 +158,20 @@ async function runPipeline(
 
     applySpec(id, spec, "rendering");
 
-    // 2. Render deterministically; repair+retry on failure.
+    let note: string | null = null;
+
+    // 2. If narrating, synthesize per-step voice FIRST and stamp each step's
+    //    duration onto the spec, so the render times each step to its spoken
+    //    line (voice + visuals stay locked). Produces an aligned audio track.
+    let narrationTrack: string | null = null;
+    const narrationDir = mkdtempSync(join(tmpdir(), "visual-algos-narr-"));
+    if (narrate && spec.narration) {
+      const prep = await prepareNarration(spec, narrationDir);
+      if (prep.ok) narrationTrack = prep.track!;
+      else note = `Narration wasn't added: ${prep.error || "unknown error"}`;
+    }
+
+    // 3. Render deterministically; repair+retry on failure.
     let render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
     let attempt = 0;
     while (!render.ok && attempt < MAX_REPAIRS) {
@@ -167,22 +181,31 @@ async function runPipeline(
         if (validateSpec(fixed).ok) {
           spec = fixed;
           applySpec(id, spec);
+          // The repaired spec has different steps; rebuild the aligned track.
+          if (narrate && spec.narration) {
+            const prep = await prepareNarration(spec, narrationDir);
+            narrationTrack = prep.ok ? prep.track! : null;
+            if (!prep.ok) note = `Narration wasn't added: ${prep.error || "unknown error"}`;
+          }
         }
       } catch {
         break;
       }
       render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
     }
-    if (!render.ok) throw new Error(render.error || "Render failed.");
+    if (!render.ok) {
+      rmSync(narrationDir, { recursive: true, force: true });
+      throw new Error(render.error || "Render failed.");
+    }
 
-    // 3. Optional narration.
+    // 4. Mux the aligned narration onto the finished video.
     let hasAudio = false;
-    let note: string | null = null;
-    if (narrate && spec.narration && render.videoPath) {
-      const res = await addNarration(id, spec.narration, render.videoPath);
+    if (narrationTrack && render.videoPath) {
+      const res = await muxNarration(id, render.videoPath, narrationTrack);
       hasAudio = res.ok;
       if (!res.ok) note = `Narration wasn't added: ${res.error || "unknown error"}`;
     }
+    rmSync(narrationDir, { recursive: true, force: true });
 
     emit(
       patchVisualization(id, {
@@ -216,34 +239,54 @@ function applySpec(id: string, spec: GeneratedSpec, status?: "rendering"): void 
   );
 }
 
-async function addNarration(
-  id: string,
-  narration: string,
-  videoPath: string,
-): Promise<{ ok: boolean; error?: string }> {
+/**
+ * Synthesize per-step narration and assemble one aligned track, stamping each
+ * step's `dur` onto the spec so the renderer times steps to the voice. Returns
+ * the track path (to be muxed after the render).
+ */
+async function prepareNarration(
+  spec: GeneratedSpec,
+  workDir: string,
+): Promise<{ ok: boolean; track?: string; error?: string }> {
   try {
     const settings = getSettings();
     if (!settings.elevenLabsApiKey) return { ok: false, error: "no ElevenLabs API key" };
     const python = await resolvePythonPath();
     const ffmpeg = await resolveFfmpegExe(python);
     if (!ffmpeg) return { ok: false, error: "ffmpeg unavailable" };
-    const { videosDir } = getPaths();
-    const audioPath = join(videosDir, `${id}.mp3`);
-    const tmpOut = join(videosDir, `${id}.muxed.mp4`);
-    await synthesizeNarration({
+    const track = join(workDir, "narration.mp3");
+    const res = await buildAlignedNarration({
+      ffmpegExe: ffmpeg,
       apiKey: settings.elevenLabsApiKey,
       voiceId: settings.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM",
-      text: narration,
-      outPath: audioPath,
+      steps: spec.steps,
+      workDir,
+      outPath: track,
     });
+    if (!res.ok) return { ok: false, error: res.error };
+    return { ok: true, track };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message.slice(0, 160) : "narration error" };
+  }
+}
+
+/** Mux the aligned narration track onto the finished video, in place. */
+async function muxNarration(
+  id: string,
+  videoPath: string,
+  audioPath: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const python = await resolvePythonPath();
+    const ffmpeg = await resolveFfmpegExe(python);
+    if (!ffmpeg) return { ok: false, error: "ffmpeg unavailable" };
+    const tmpOut = join(getPaths().videosDir, `${id}.muxed.mp4`);
     const mux = await muxAudioOntoVideo({ ffmpegExe: ffmpeg, videoPath, audioPath, outPath: tmpOut });
     if (!mux.ok) {
       rmSync(tmpOut, { force: true });
-      rmSync(audioPath, { force: true });
       return { ok: false, error: mux.error ? mux.error.slice(0, 160) : "audio mux failed" };
     }
     renameSync(tmpOut, videoPath);
-    rmSync(audioPath, { force: true });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message.slice(0, 160) : "narration error" };
