@@ -97,6 +97,15 @@ export const RESPONSE_SCHEMA = {
 
 export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
 
+/**
+ * Providers without a native response-schema parameter (OpenRouter's OpenAI-
+ * compatible endpoint) get the same schema as prompt text instead.
+ */
+export const SCHEMA_HINT = `The JSON you return MUST match this JSON Schema exactly:
+${JSON.stringify(RESPONSE_SCHEMA, null, 2)}
+
+Return the JSON object on its own — no prose, no markdown fences.`;
+
 export function buildUserPrompt(topic: string, language: string): string {
   return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\nProduce the walkthrough JSON now.`;
 }

@@ -1,6 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
-  RESPONSE_SCHEMA,
   SCHEMA_CAST,
   SYSTEM_INSTRUCTION,
   buildRepairPrompt,
@@ -8,8 +7,6 @@ import {
   normalizeSpec,
   type GeneratedSpec,
 } from "./manimPrompt";
-
-void RESPONSE_SCHEMA;
 
 function model(apiKey: string, modelName: string) {
   const genAI = new GoogleGenerativeAI(apiKey);

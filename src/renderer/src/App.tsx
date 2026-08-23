@@ -1,5 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { activeModel, hasProviderKey } from "@shared/types";
 import { Nav } from "./components/Nav";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { SetupBanner } from "./components/SetupBanner";
@@ -28,7 +29,7 @@ export default function App() {
   const { settings, save } = useSettings();
 
   const envReady = !!env?.ready;
-  const hasKey = !!settings?.geminiApiKey;
+  const hasKey = hasProviderKey(settings);
   const canGenerate = envReady && hasKey;
 
   return (
@@ -47,7 +48,8 @@ export default function App() {
                     env={env}
                     hasKey={hasKey}
                     hasElevenLabs={!!settings?.elevenLabsApiKey}
-                    model={settings?.geminiModel ?? "gemini-2.5-flash"}
+                    provider={settings?.provider ?? "gemini"}
+                    model={settings ? activeModel(settings) : "gemini-2.5-flash"}
                   />
                 </Page>
               }
@@ -70,7 +72,7 @@ export default function App() {
         </AnimatePresence>
       </main>
       <footer className="border-t border-white/5 py-4 text-center text-xs text-white/35">
-        Visual Algos · renders locally with Manim + Gemini
+        Visual Algos · renders locally with Manim
       </footer>
       <UpdateBanner />
       <SetupBanner />

@@ -9,8 +9,11 @@ import {
   Volume2,
 } from "lucide-react";
 import {
+  AI_PROVIDERS,
   ELEVENLABS_VOICES,
   GEMINI_MODELS,
+  OPENROUTER_MODELS,
+  type AiProvider,
   type EnvStatus,
   type Settings,
   type ToolStatus,
@@ -62,9 +65,13 @@ export function SettingsPage({
   onSave: (patch: Partial<Settings>) => Promise<void>;
   onRecheckEnv: () => void;
 }) {
+  const [provider, setProvider] = useState<AiProvider>("gemini");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("gemini-2.5-flash");
   const [customModel, setCustomModel] = useState(false);
+  const [orKey, setOrKey] = useState("");
+  const [orModel, setOrModel] = useState("google/gemini-2.5-flash");
+  const [customOrModel, setCustomOrModel] = useState(false);
   const [pythonPath, setPythonPath] = useState("");
   const [elevenKey, setElevenKey] = useState("");
   const [voiceId, setVoiceId] = useState(ELEVENLABS_VOICES[0].id);
@@ -82,9 +89,16 @@ export function SettingsPage({
 
   useEffect(() => {
     if (!settings) return;
+    setProvider(settings.provider);
     setApiKey(settings.geminiApiKey);
     setModel(settings.geminiModel);
     setCustomModel(!GEMINI_MODELS.some((m) => m.id === settings.geminiModel) && !!settings.geminiModel);
+    setOrKey(settings.openRouterApiKey);
+    setOrModel(settings.openRouterModel);
+    setCustomOrModel(
+      !OPENROUTER_MODELS.some((m) => m.id === settings.openRouterModel) &&
+        !!settings.openRouterModel,
+    );
     setPythonPath(settings.pythonPath);
     setElevenKey(settings.elevenLabsApiKey);
     setVoiceId(settings.elevenLabsVoiceId);
@@ -100,8 +114,11 @@ export function SettingsPage({
 
   async function save() {
     await onSave({
+      provider,
       geminiApiKey: apiKey.trim(),
       geminiModel: model.trim(),
+      openRouterApiKey: orKey.trim(),
+      openRouterModel: orModel.trim(),
       pythonPath: pythonPath.trim(),
       elevenLabsApiKey: elevenKey.trim(),
       elevenLabsVoiceId: voiceId.trim(),
@@ -124,9 +141,18 @@ export function SettingsPage({
     }
   }
 
+  const providerOptions = AI_PROVIDERS.map((p) => ({
+    value: p.id,
+    label: p.label,
+    note: p.hint,
+  }));
   const modelOptions = [
     ...GEMINI_MODELS.map((m) => ({ value: m.id, label: m.label, note: m.note })),
     { value: CUSTOM, label: "Custom…", note: "enter any model id" },
+  ];
+  const orModelOptions = [
+    ...OPENROUTER_MODELS.map((m) => ({ value: m.id, label: m.label, note: m.note })),
+    { value: CUSTOM, label: "Custom…", note: "enter any model slug" },
   ];
   const voiceOptions = [
     ...ELEVENLABS_VOICES.map((v) => ({ value: v.id, label: v.label })),
@@ -147,49 +173,106 @@ export function SettingsPage({
         )}
       </div>
 
-      {/* Gemini */}
+      {/* AI provider */}
       <section className="mt-8 space-y-4">
-        <SectionTitle icon={KeyRound}>Gemini</SectionTitle>
+        <SectionTitle icon={KeyRound}>AI provider</SectionTitle>
         <p className="-mt-2 text-xs text-white/45">
-          Get a key at aistudio.google.com/apikey. Stored locally on this machine only.
+          Where the walkthrough is written. Only the topic you type is ever sent. Keys are stored
+          locally on this machine only.
         </p>
-        <div>
-          <label className="mb-1.5 block text-xs text-white/60">API key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="AIza…"
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
-            <Cpu size={13} /> Model
-          </label>
-          <Dropdown
-            value={customModel ? CUSTOM : model}
-            options={modelOptions}
-            onChange={(v) => {
-              if (v === CUSTOM) {
-                setCustomModel(true);
-                setModel("");
-              } else {
-                setCustomModel(false);
-                setModel(v);
-              }
-            }}
-          />
-          {customModel && (
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. gemini-2.5-pro-exp"
-              className={`${inputCls} mt-2`}
-            />
-          )}
-        </div>
+        <Dropdown
+          value={provider}
+          options={providerOptions}
+          onChange={(v) => setProvider(v as AiProvider)}
+        />
+
+        {provider === "gemini" ? (
+          <>
+            <p className="text-xs text-white/45">Get a free key at aistudio.google.com/apikey.</p>
+            <div>
+              <label className="mb-1.5 block text-xs text-white/60">Gemini API key</label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="AIza…"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+                <Cpu size={13} /> Model
+              </label>
+              <Dropdown
+                value={customModel ? CUSTOM : model}
+                options={modelOptions}
+                onChange={(v) => {
+                  if (v === CUSTOM) {
+                    setCustomModel(true);
+                    setModel("");
+                  } else {
+                    setCustomModel(false);
+                    setModel(v);
+                  }
+                }}
+              />
+              {customModel && (
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="e.g. gemini-2.5-pro-exp"
+                  className={`${inputCls} mt-2`}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-white/45">
+              Get a key at openrouter.ai/keys — one key for models from many providers. Pick a
+              model that can return strict JSON; if generation fails with malformed JSON, try a
+              stronger one.
+            </p>
+            <div>
+              <label className="mb-1.5 block text-xs text-white/60">OpenRouter API key</label>
+              <input
+                type="password"
+                value={orKey}
+                onChange={(e) => setOrKey(e.target.value)}
+                placeholder="sk-or-v1-…"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+                <Cpu size={13} /> Model
+              </label>
+              <Dropdown
+                value={customOrModel ? CUSTOM : orModel}
+                options={orModelOptions}
+                onChange={(v) => {
+                  if (v === CUSTOM) {
+                    setCustomOrModel(true);
+                    setOrModel("");
+                  } else {
+                    setCustomOrModel(false);
+                    setOrModel(v);
+                  }
+                }}
+              />
+              {customOrModel && (
+                <input
+                  type="text"
+                  value={orModel}
+                  onChange={(e) => setOrModel(e.target.value)}
+                  placeholder="e.g. mistralai/mistral-large"
+                  className={`${inputCls} mt-2`}
+                />
+              )}
+            </div>
+          </>
+        )}
       </section>
 
       {/* ElevenLabs */}
