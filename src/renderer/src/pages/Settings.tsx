@@ -9,6 +9,8 @@ import {
   Volume2,
 } from "lucide-react";
 import {
+  DEFAULT_ELEVENLABS_MODEL,
+  ELEVENLABS_MODELS,
   ELEVENLABS_VOICES,
   GEMINI_MODELS,
   type EnvStatus,
@@ -69,6 +71,8 @@ export function SettingsPage({
   const [elevenKey, setElevenKey] = useState("");
   const [voiceId, setVoiceId] = useState(ELEVENLABS_VOICES[0].id);
   const [customVoice, setCustomVoice] = useState(false);
+  const [voiceModel, setVoiceModel] = useState(DEFAULT_ELEVENLABS_MODEL);
+  const [customVoiceModel, setCustomVoiceModel] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [installing, setInstalling] = useState(false);
@@ -92,6 +96,9 @@ export function SettingsPage({
       !ELEVENLABS_VOICES.some((v) => v.id === settings.elevenLabsVoiceId) &&
         !!settings.elevenLabsVoiceId,
     );
+    const vm = settings.elevenLabsModel || DEFAULT_ELEVENLABS_MODEL;
+    setVoiceModel(vm);
+    setCustomVoiceModel(!ELEVENLABS_MODELS.some((m) => m.id === vm));
   }, [settings]);
 
   useEffect(() => {
@@ -105,6 +112,7 @@ export function SettingsPage({
       pythonPath: pythonPath.trim(),
       elevenLabsApiKey: elevenKey.trim(),
       elevenLabsVoiceId: voiceId.trim(),
+      elevenLabsModel: voiceModel.trim() || DEFAULT_ELEVENLABS_MODEL,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
@@ -131,6 +139,10 @@ export function SettingsPage({
   const voiceOptions = [
     ...ELEVENLABS_VOICES.map((v) => ({ value: v.id, label: v.label })),
     { value: CUSTOM, label: "Custom…", note: "enter a voice id" },
+  ];
+  const voiceModelOptions = [
+    ...ELEVENLABS_MODELS.map((m) => ({ value: m.id, label: m.label, note: m.note })),
+    { value: CUSTOM, label: "Custom…", note: "enter a model id" },
   ];
 
   const inputCls =
@@ -233,6 +245,36 @@ export function SettingsPage({
               className={`${inputCls} mt-2`}
             />
           )}
+        </div>
+        <div>
+          <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+            <Cpu size={13} /> Voice model
+          </label>
+          <Dropdown
+            value={customVoiceModel ? CUSTOM : voiceModel}
+            options={voiceModelOptions}
+            onChange={(v) => {
+              if (v === CUSTOM) {
+                setCustomVoiceModel(true);
+                setVoiceModel("");
+              } else {
+                setCustomVoiceModel(false);
+                setVoiceModel(v);
+              }
+            }}
+          />
+          {customVoiceModel && (
+            <input
+              type="text"
+              value={voiceModel}
+              onChange={(e) => setVoiceModel(e.target.value)}
+              placeholder="e.g. eleven_turbo_v2_5"
+              className={`${inputCls} mt-2`}
+            />
+          )}
+          <p className="mt-1.5 text-xs text-white/40">
+            Higher-quality models sound better; faster models cost less and render quicker.
+          </p>
         </div>
       </section>
 
