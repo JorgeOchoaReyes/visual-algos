@@ -259,6 +259,7 @@ async function prepareNarration(
       ffmpegExe: ffmpeg,
       apiKey: settings.elevenLabsApiKey,
       voiceId: settings.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM",
+      modelId: settings.elevenLabsModel,
       steps: spec.steps,
       workDir,
       outPath: track,

@@ -11,8 +11,9 @@ export async function synthesizeNarration(params: {
   voiceId: string;
   text: string;
   outPath: string;
+  modelId?: string;
 }): Promise<void> {
-  const { apiKey, voiceId, text, outPath } = params;
+  const { apiKey, voiceId, text, outPath, modelId } = params;
   const url = `${API_BASE}/${encodeURIComponent(voiceId)}`;
 
   const res = await fetch(url, {
@@ -24,7 +25,7 @@ export async function synthesizeNarration(params: {
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_multilingual_v2",
+      model_id: modelId || "eleven_multilingual_v2",
       voice_settings: { stability: 0.5, similarity_boost: 0.75 },
     }),
   });

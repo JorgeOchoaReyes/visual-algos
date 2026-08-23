@@ -89,11 +89,12 @@ export async function buildAlignedNarration(params: {
   ffmpegExe: string;
   apiKey: string;
   voiceId: string;
+  modelId?: string;
   steps: SpecStep[];
   workDir: string;
   outPath: string;
 }): Promise<NarrationResult> {
-  const { ffmpegExe, apiKey, voiceId, steps, workDir, outPath } = params;
+  const { ffmpegExe, apiKey, voiceId, modelId, steps, workDir, outPath } = params;
   try {
     const segFiles: string[] = [];
     let chars = 0;
@@ -118,7 +119,7 @@ export async function buildAlignedNarration(params: {
       }
       chars += say.length;
       const clip = join(workDir, `clip_${i}.mp3`);
-      await synthesizeNarration({ apiKey, voiceId, text: say, outPath: clip });
+      await synthesizeNarration({ apiKey, voiceId, modelId, text: say, outPath: clip });
       const cd = await clipDuration(ffmpegExe, clip);
       const dur = Math.max(MIN_STEP, (cd ?? MIN_STEP) + GAP);
       steps[i].dur = Math.round(dur * 100) / 100;
