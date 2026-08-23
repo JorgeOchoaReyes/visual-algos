@@ -67,6 +67,14 @@ PICK THE RIGHT VISUALIZATION with "viz":
   "grid"       – dynamic programming tables, matrices, grid pathfinding
   "linkedlist" – linked-list traversal / search / build
 
+CRITICAL: match the visualization to the DATA STRUCTURE the algorithm operates
+on, not to what's convenient. If the algorithm works on a graph or tree — it
+mentions nodes, neighbors, adjacency, edges, traversal, shortest path, BFS/DFS,
+Dijkstra, topological order, or a tree/heap — you MUST use viz "graph" or "tree"
+and provide real "nodes" and "edges". NEVER encode a graph as an array or an
+adjacency matrix and render it as bars — that hides the actual structure. Same
+for grids (use "grid") and linked lists (use "linkedlist").
+
 CODE RULES (all viz)
 - Write COMPLETE, correct, runnable code (6–20 short lines). NEVER stub or hide
   logic behind a placeholder or an unshown helper (no "_merge(...) # complex"):
@@ -77,14 +85,20 @@ CODE RULES (all viz)
 - Never emit a step that only changes line + say with no visual change. Aim for
   12–34 steps. Also give an overall "narration" (the say lines joined).
 
+DATA SIZE — use ENOUGH data for a meaningful visualization (this matters a lot):
+  arrays: 8–12 elements (never fewer than 8); linked lists: 6–9 nodes; graphs:
+  6–9 nodes with several edges; grids: at least 4×4 (or 3×4). Tiny examples
+  (3–4 items) look trivial and are NOT acceptable — always fill the structure.
+
 DATA + STEP FIELDS BY viz:
-- array / linkedlist: provide "array" of 8–9 integers. Step fields:
+- array / linkedlist: provide "array" of 8–12 integers (8+ minimum). Step fields:
     compare:[i,j] (examined), swap:[i,j] (in-place swap, animated),
     set:[[i,v]] (write a value), range:[lo,hi] (sub-array, for divide&conquer),
     pointers:[{name,index}] (use your code's variable names i/j/lo/mid/hi/k/cur),
     sorted:[i] (finalized, turns green), found:i (linkedlist match).
-- graph / tree: provide "nodes":[{id,x,y}] with a clean 2-D layout (trees: root
-  on top, children below; graphs: spread out, few crossings) and "edges" as
+- graph / tree: provide "nodes":[{id,x,y}] (6–9 nodes) with a clean 2-D layout
+  (trees: root on top, children below; graphs: spread out, few crossings) and
+  "edges" as
   [[from,to]] (add a weight: [from,to,w] for weighted graphs). Step fields:
     active:[ids] (current node(s)), visit:[ids] (mark visited/green, cumulative),
     edge:[[u,v]] (edges traversed this step), label:[{id,text}] (put text on a
@@ -367,6 +381,24 @@ export function validateSpec(spec: GeneratedSpec): Validated {
 
 /** Quality check — a SOFT gate (triggers a repair but never blocks rendering). */
 export function vizChangesEnough(spec: GeneratedSpec): Validated {
+  // Enough data for a meaningful visualization. Tiny examples read as trivial;
+  // flag them so the pipeline regenerates with a fuller structure.
+  if (spec.viz === "graph" || spec.viz === "tree") {
+    if ((spec.nodes?.length ?? 0) < 5) {
+      return { ok: false, reason: "Too few nodes — use 6–9 nodes for a meaningful graph." };
+    }
+  } else if (spec.viz === "grid") {
+    const rows = spec.grid?.length ?? 0;
+    const cols = spec.grid?.[0]?.length ?? 0;
+    if (rows < 3 || cols < 3) {
+      return { ok: false, reason: "Grid is too small — use at least 4×4 (3×4 minimum)." };
+    }
+  } else {
+    if (spec.array.length < 7) {
+      return { ok: false, reason: "Array example is too small — use 8–12 elements for a meaningful visualization." };
+    }
+  }
+
   const changing = spec.steps.filter(stepMoves).length;
   if (changing < Math.ceil(spec.steps.length * 0.6)) {
     return {
