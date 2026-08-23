@@ -79,6 +79,8 @@ export interface Settings {
   elevenLabsApiKey: string;
   /** ElevenLabs voice id to narrate with. */
   elevenLabsVoiceId: string;
+  /** ElevenLabs model id (quality vs. speed tier). */
+  elevenLabsModel: string;
 }
 
 /** Where spec generation is sent. Both providers use a key you supply. */
@@ -195,6 +197,16 @@ export const ELEVENLABS_VOICES: { id: string; label: string }[] = [
   { id: "VR6AewLTigWG4xSOukaG", label: "Arnold (crisp)" },
   { id: "pNInz6obpgDQGcFmaJgB", label: "Adam (narration)" },
 ];
+
+/** ElevenLabs model tiers ("Custom…" allows any model id). */
+export const ELEVENLABS_MODELS: { id: string; label: string; note?: string }[] = [
+  { id: "eleven_multilingual_v2", label: "Multilingual v2", note: "best quality · recommended" },
+  { id: "eleven_turbo_v2_5", label: "Turbo v2.5", note: "faster · lower cost" },
+  { id: "eleven_flash_v2_5", label: "Flash v2.5", note: "fastest · lowest latency" },
+  { id: "eleven_monolingual_v1", label: "Monolingual v1", note: "English only (legacy)" },
+];
+
+export const DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2";
 
 export interface ToolStatus {
   ok: boolean;

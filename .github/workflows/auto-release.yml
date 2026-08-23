@@ -43,11 +43,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cat > notes.md <<'NOTES'
+          Automated release of __VERSION__.
+
+          ### Downloads
+          - **macOS (Apple Silicon)** — `.dmg`
+          - **Windows** — `Setup .exe`
+          - **Linux** — `.AppImage`
+
+          > ⚠️ **macOS: first launch is blocked as "unidentified developer"
+          > (or "damaged").** These builds are ad-hoc signed but **not notarized**
+          > (no paid Apple Developer certificate), so Gatekeeper stops the first
+          > open. To run it: **right-click the app → Open → Open** (a normal
+          > double-click won't offer the bypass). If macOS still says the app is
+          > **"damaged,"** clear the download quarantine once in Terminal:
+          > ```
+          > xattr -cr "/Applications/Visual Algos.app"
+          > ```
+
+          > ⚠️ **Windows:** SmartScreen may warn on first run — click
+          > **More info → Run anyway**.
+          NOTES
+          sed -i "s/__VERSION__/v${{ steps.ver.outputs.version }}/" notes.md
           gh release create "v${{ steps.ver.outputs.version }}" \
             -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "v${{ steps.ver.outputs.version }}" \
-            --notes "Automated release of v${{ steps.ver.outputs.version }}."
+            --notes-file notes.md
 
   build:
     needs: check

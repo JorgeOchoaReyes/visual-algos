@@ -1,8 +1,10 @@
 import {
+  MAX_OUTPUT_TOKENS,
   SCHEMA_HINT,
   SYSTEM_INSTRUCTION,
   buildRepairPrompt,
   buildUserPrompt,
+  extractJson,
   normalizeSpec,
   type GeneratedSpec,
 } from "./manimPrompt";
@@ -15,7 +17,7 @@ const APP_TITLE = "Visual Algos";
 type MessageContent = string | { text?: string }[] | undefined;
 
 interface ChatResponse {
-  choices?: { message?: { content?: MessageContent } }[];
+  choices?: { message?: { content?: MessageContent }; finish_reason?: string }[];
   error?: { message?: string };
 }
 
@@ -37,19 +39,6 @@ function contentToText(content: MessageContent): string {
   return "";
 }
 
-/**
- * Models vary in how literally they obey "return only JSON" — some wrap it in a
- * ```json fence or add a sentence around it. Pull out the JSON object.
- */
-function extractJson(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = (fenced ? fenced[1] : text).trim();
-  const start = body.indexOf("{");
-  const end = body.lastIndexOf("}");
-  if (start >= 0 && end > start) return body.slice(start, end + 1);
-  return body;
-}
-
 async function chat(
   apiKey: string,
   modelName: string,
@@ -67,6 +56,7 @@ async function chat(
     body: JSON.stringify({
       model: modelName,
       temperature: 0.5,
+      max_tokens: MAX_OUTPUT_TOKENS,
       messages: [
         { role: "system", content: `${SYSTEM_INSTRUCTION}\n\n${SCHEMA_HINT}` },
         { role: "user", content: userPrompt },
@@ -94,9 +84,17 @@ async function chat(
   }
   if (body.error?.message) throw new Error(`OpenRouter error: ${body.error.message}`);
 
-  const content = contentToText(body.choices?.[0]?.message?.content);
+  const choice = body.choices?.[0];
+  const content = contentToText(choice?.message?.content);
   if (!content.trim()) {
     throw new Error(`OpenRouter returned an empty response from ${modelName}.`);
+  }
+  // "length" means the spec was cut off mid-JSON; say so rather than letting it
+  // surface as an opaque parse failure.
+  if (choice?.finish_reason === "length" && !content.trim().endsWith("}")) {
+    throw new Error(
+      "The response was cut off (too long). Try a simpler topic or a model with a larger output limit.",
+    );
   }
   return content;
 }
@@ -111,6 +109,24 @@ function parse(text: string, topic: string): GeneratedSpec {
   return normalizeSpec(raw, topic);
 }
 
+/** Generate + parse, retrying once on a malformed/empty response. */
+async function chatAndParse(
+  apiKey: string,
+  modelName: string,
+  prompt: string,
+  topic: string,
+): Promise<GeneratedSpec> {
+  try {
+    return parse(await chat(apiKey, modelName, prompt), topic);
+  } catch (first) {
+    try {
+      return parse(await chat(apiKey, modelName, prompt), topic);
+    } catch {
+      throw first instanceof Error ? first : new Error("The model returned malformed JSON.");
+    }
+  }
+}
+
 /** Ask an OpenRouter model for a structured algorithm-walkthrough spec. */
 export async function generateSpec(
   apiKey: string,
@@ -118,7 +134,7 @@ export async function generateSpec(
   topic: string,
   language: string,
 ): Promise<GeneratedSpec> {
-  return parse(await chat(apiKey, modelName, buildUserPrompt(topic, language)), topic);
+  return chatAndParse(apiKey, modelName, buildUserPrompt(topic, language), topic);
 }
 
 /** Ask an OpenRouter model to fix an invalid spec. */
@@ -129,8 +145,5 @@ export async function repairSpec(
   language: string,
   error: string,
 ): Promise<GeneratedSpec> {
-  return parse(
-    await chat(apiKey, modelName, buildRepairPrompt(topic, language, error)),
-    topic,
-  );
+  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error), topic);
 }

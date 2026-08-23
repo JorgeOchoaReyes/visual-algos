@@ -122,6 +122,17 @@ async function main() {
   run(py, ["-m", "pip", "install", "--upgrade", "pip", "wheel"]);
   run(py, ["-m", "pip", "install", MANIM_SPEC, "imageio-ffmpeg"]);
 
+  // 2b. macOS only: vendor the external C libraries (cairo, pango, glib, …)
+  //     into the runtime. manim's compiled extensions (pycairo, manimpango)
+  //     link against Homebrew dylibs that exist on the CI builder but NOT on a
+  //     clean user Mac — without this, `import manim` fails on the user's
+  //     machine and the app falls back to a doomed source compile. delocate
+  //     copies those dylibs into the package tree and rewrites their load paths
+  //     so the bundle is genuinely self-contained.
+  if (process.platform === "darwin") {
+    vendorMacDylibs(py);
+  }
+
   // 3. Sanity check.
   run(py, ["-c", "import manim, imageio_ffmpeg; print('manim', manim.__version__)"]);
 
@@ -129,6 +140,33 @@ async function main() {
   await prune();
 
   console.log(`\n✓ Bundled runtime ready at ${runtimeDir}`);
+}
+
+/**
+ * macOS: copy external dylibs (cairo/pango/glib/…) that manim's C extensions
+ * link against into the site-packages tree and fix their install names, so the
+ * bundled runtime doesn't depend on Homebrew being present on the user's Mac.
+ */
+function vendorMacDylibs(py) {
+  const site = join(runtimeDir, "lib", `python${PY_VERSION.split(".").slice(0, 2).join(".")}`, "site-packages");
+  console.log("… Vendoring external dylibs into the runtime (delocate)");
+  // Install delocate into an ISOLATED venv, not into the runtime itself. If it
+  // lives inside the runtime, delocate-path also scans delocate's own test
+  // fixtures (deliberately-broken .dylibs under delocate/tests/data), which
+  // abort the run with "Could not find all dependencies". Running from a
+  // separate venv keeps those fixtures out of the scanned tree.
+  const venvDir = join(resourcesDir, ".delocate-venv");
+  rmSync(venvDir, { recursive: true, force: true });
+  run(py, ["-m", "venv", venvDir]);
+  const venvPy = join(venvDir, "bin", "python");
+  run(venvPy, ["-m", "pip", "install", "--quiet", "--upgrade", "pip"]);
+  run(venvPy, ["-m", "pip", "install", "--quiet", "delocate"]);
+  // delocate-path rewrites the runtime's packages in place: it copies each
+  // external dylib into <package>/.dylibs and points the extensions at it via
+  // @loader_path. --ignore-missing-dependencies keeps a single unresolved
+  // reference from failing the whole build.
+  run(join(venvDir, "bin", "delocate-path"), ["--ignore-missing-dependencies", site]);
+  rmSync(venvDir, { recursive: true, force: true });
 }
 
 async function prune() {

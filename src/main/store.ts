@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, renameSync } from "fs";
-import type { Settings, Visualization } from "@shared/types";
+import { DEFAULT_ELEVENLABS_MODEL, type Settings, type Visualization } from "@shared/types";
 import { getPaths } from "./paths";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: Settings = {
   pythonPath: "",
   elevenLabsApiKey: "",
   elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM",
+  elevenLabsModel: DEFAULT_ELEVENLABS_MODEL,
 };
 
 function readJson<T>(file: string, fallback: T): T {

@@ -31,6 +31,12 @@ extraResources:
     filter: ["**/*"]
 mac:
   category: public.app-category.education
+  # Ad-hoc sign (identity: null → sign with "-"). We don't have an Apple
+  # Developer certificate, so this can't notarize the app, but a valid ad-hoc
+  # signature is what lets Apple Silicon run it at all: without it macOS reports
+  # the app as "damaged" with no way to open it. With it, users get the normal
+  # "unidentified developer" prompt they can bypass via right-click → Open.
+  identity: null
   target:
     - dmg
     - zip
