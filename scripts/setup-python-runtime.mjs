@@ -150,17 +150,23 @@ async function main() {
 function vendorMacDylibs(py) {
   const site = join(runtimeDir, "lib", `python${PY_VERSION.split(".").slice(0, 2).join(".")}`, "site-packages");
   console.log("… Vendoring external dylibs into the runtime (delocate)");
-  run(py, ["-m", "pip", "install", "delocate"]);
-  // delocate-path rewrites the installed packages in place: it copies each
+  // Install delocate into an ISOLATED venv, not into the runtime itself. If it
+  // lives inside the runtime, delocate-path also scans delocate's own test
+  // fixtures (deliberately-broken .dylibs under delocate/tests/data), which
+  // abort the run with "Could not find all dependencies". Running from a
+  // separate venv keeps those fixtures out of the scanned tree.
+  const venvDir = join(resourcesDir, ".delocate-venv");
+  rmSync(venvDir, { recursive: true, force: true });
+  run(py, ["-m", "venv", venvDir]);
+  const venvPy = join(venvDir, "bin", "python");
+  run(venvPy, ["-m", "pip", "install", "--quiet", "--upgrade", "pip"]);
+  run(venvPy, ["-m", "pip", "install", "--quiet", "delocate"]);
+  // delocate-path rewrites the runtime's packages in place: it copies each
   // external dylib into <package>/.dylibs and points the extensions at it via
-  // @loader_path. Run it against the whole site-packages tree.
-  const delocatePath = join(runtimeDir, "bin", "delocate-path");
-  if (existsSync(delocatePath)) {
-    run(delocatePath, [site]);
-  } else {
-    // Fall back to the module entry point if the console script isn't present.
-    run(py, ["-m", "delocate.cmd.delocate_path", site]);
-  }
+  // @loader_path. --ignore-missing-dependencies keeps a single unresolved
+  // reference from failing the whole build.
+  run(join(venvDir, "bin", "delocate-path"), ["--ignore-missing-dependencies", site]);
+  rmSync(venvDir, { recursive: true, force: true });
 }
 
 async function prune() {
