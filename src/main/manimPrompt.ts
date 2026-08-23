@@ -1,13 +1,41 @@
 import type { SchemaType } from "@google/generative-ai";
 
-/** A single animation step (internal form used by the renderer). */
+export type VizKind = "array" | "graph" | "tree" | "grid" | "linkedlist";
+
+export interface GraphNode {
+  id: string;
+  x: number;
+  y: number;
+}
+
+/** A single animation step (internal form the renderer consumes). */
 export interface SpecStep {
   line: number; // 1-based index into code
-  highlight?: number[]; // array indices to emphasize
-  pointers?: Record<string, number>; // named pointers -> index
-  array?: number[]; // new full array state (for swaps/sorts)
-  found?: number | null; // index to mark done/green
-  caption: string;
+  say: string; // spoken line for this step (also the caption); drives its timing
+  dur?: number; // exact seconds for this step (filled by the audio pass)
+  // array / linkedlist:
+  compare?: number[];
+  swap?: [number, number];
+  set?: [number, number][];
+  range?: [number, number];
+  sorted?: number[];
+  pointers?: Record<string, number>;
+  found?: number | null;
+  // graph / tree:
+  active?: string[];
+  visit?: string[];
+  edge?: [string, string][];
+  label?: Record<string, string>;
+  queue?: string[];
+  // grid:
+  gcompare?: [number, number][];
+  gset?: [number, number, number][];
+  gdone?: [number, number][];
+  gpath?: [number, number][];
+  // legacy:
+  highlight?: number[];
+  array?: number[];
+  caption?: string;
 }
 
 /** The structured content Gemini produces (the AI writes DATA, not code). */
@@ -15,50 +43,60 @@ export interface GeneratedSpec {
   title: string;
   description: string;
   narration: string;
+  viz: VizKind;
   code: string[];
-  array: number[];
+  array: number[]; // array / linkedlist
   target?: number | null;
+  nodes?: GraphNode[]; // graph / tree
+  edges?: (string | number)[][]; // graph / tree: [from, to] or [from, to, weight]
+  grid?: number[][]; // grid
   steps: SpecStep[];
 }
 
 export const SYSTEM_INSTRUCTION = `You explain computer-science algorithms as short, precise, step-by-step
-animations. You DO NOT write animation code. Instead you output structured DATA
-that a fixed renderer turns into a video: the algorithm's source code on the
-left, a small array visualization on the right, and an ordered list of steps
-that each highlight ONE code line and update the array state in sync.
+animations. You DO NOT write animation code — you output structured DATA that a
+fixed renderer turns into a video: the algorithm's source code on the left, a
+data-structure visualization on the right, and an ordered list of steps. Each
+step highlights ONE code line, updates the visualization, AND carries the exact
+sentence the narrator speaks — so code, visuals and voice stay locked together.
 
-Rules:
-- Choose ONE concrete, SHORT example (an array of 5–8 integers). Keep it small so
-  the whole run is quick.
-- Write the algorithm as 6–14 SHORT lines of real, correct code in the requested
-  language. This is what appears on screen and gets highlighted line by line.
-- Produce an ordered list of steps that walk the example to completion (actually
-  loop through the iterations — don't skip to the end). Each step has:
-    • line: the 1-based line number in "code" that is executing at this step.
-    • caption: a short human sentence describing what happens (e.g. "mid = 3",
-      "a[3] < target, search right", "swap 5 and 3").
-    • highlight: array indices being compared / looked at right now.
-    • pointers: named markers under cells, as a list of {name, index} — e.g.
-      lo/hi/mid, i/j, left/right. Pointers persist and move across steps.
-    • setArray: the FULL new array contents, ONLY when the array actually changed
-      this step (a swap or write). Omit when unchanged.
-    • found: an array index to mark as done/success (optional).
+PICK THE RIGHT VISUALIZATION with "viz":
+  "array"      – sorting, searching, two-pointer, sliding window (drawn as bars)
+  "graph"      – BFS, DFS, Dijkstra, topological sort (nodes + edges)
+  "tree"       – BST, heap, tree traversals (nodes + edges with positions)
+  "grid"       – dynamic programming tables, matrices, grid pathfinding
+  "linkedlist" – linked-list traversal / search / build
 
-CRITICAL — the right-side visualization MUST visibly change on (almost) every
-step. Never emit steps that only change 'line' and 'caption'. On EVERY step
-include at least one of: 'highlight' (the indices under consideration), updated
-'pointers' (give the current position of every relevant index like i/j/lo/mid/hi
-— repeat them each step so they move), or 'setArray' (on a swap/write). If the
-array/pointers don't move, the video looks broken. Concretely: an index variable
-that changes value → a pointer that moves; a comparison → highlight those cells;
-a swap/assignment → setArray with the new contents.
+CODE RULES (all viz)
+- Write COMPLETE, correct, runnable code (6–20 short lines). NEVER stub or hide
+  logic behind a placeholder or an unshown helper (no "_merge(...) # complex"):
+  write the full body so a viewer can see how it actually works.
+- Every step: "line" (1-based code line) + "say" (ONE spoken sentence describing
+  exactly what happens this step). The three tracks MUST agree: the highlighted
+  line does this step, "say" narrates it, the visualization changes to match.
+- Never emit a step that only changes line + say with no visual change. Aim for
+  12–34 steps. Also give an overall "narration" (the say lines joined).
 
-- Keep steps between ~6 and ~30. Every 'line' must be a valid line number.
-- Also write a 60–110 word spoken "narration" that explains the walk in order.
-- Make the steps and code perfectly consistent: the highlighted line must match
-  what the caption and array change describe.
+DATA + STEP FIELDS BY viz:
+- array / linkedlist: provide "array" of 8–9 integers. Step fields:
+    compare:[i,j] (examined), swap:[i,j] (in-place swap, animated),
+    set:[[i,v]] (write a value), range:[lo,hi] (sub-array, for divide&conquer),
+    pointers:[{name,index}] (use your code's variable names i/j/lo/mid/hi/k/cur),
+    sorted:[i] (finalized, turns green), found:i (linkedlist match).
+- graph / tree: provide "nodes":[{id,x,y}] with a clean 2-D layout (trees: root
+  on top, children below; graphs: spread out, few crossings) and "edges" as
+  [[from,to]] (add a weight: [from,to,w] for weighted graphs). Step fields:
+    active:[ids] (current node(s)), visit:[ids] (mark visited/green, cumulative),
+    edge:[[u,v]] (edges traversed this step), label:[{id,text}] (put text on a
+    node, e.g. a Dijkstra distance), queue:[ids] (current queue/stack contents).
+- grid: provide "grid" as a 2-D array of integers (use 0 for empty). Step fields:
+    gcompare:[[r,c]] (cells read), gset:[[r,c,v]] (cell written),
+    gdone:[[r,c]] (finalized/green, cumulative), gpath:[[r,c]] (final path).
 
-Return ONLY the JSON described by the schema.`;
+Return ONLY the JSON described by the schema. Fill only the fields relevant to
+the chosen viz.`;
+
+const rc = { type: "array", items: { type: "integer" } };
 
 export const RESPONSE_SCHEMA = {
   type: "object",
@@ -66,17 +104,39 @@ export const RESPONSE_SCHEMA = {
     title: { type: "string" },
     description: { type: "string" },
     narration: { type: "string" },
+    viz: { type: "string" },
     code: { type: "array", items: { type: "string" } },
     array: { type: "array", items: { type: "integer" } },
     target: { type: "integer" },
+    nodes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" } },
+        required: ["id", "x", "y"],
+      },
+    },
+    edges: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { from: { type: "string" }, to: { type: "string" }, weight: { type: "integer" } },
+        required: ["from", "to"],
+      },
+    },
+    grid: { type: "array", items: { type: "array", items: { type: "integer" } } },
     steps: {
       type: "array",
       items: {
         type: "object",
         properties: {
           line: { type: "integer" },
-          caption: { type: "string" },
-          highlight: { type: "array", items: { type: "integer" } },
+          say: { type: "string" },
+          compare: rc,
+          swap: rc,
+          set: { type: "array", items: rc },
+          range: rc,
+          sorted: rc,
           pointers: {
             type: "array",
             items: {
@@ -85,14 +145,36 @@ export const RESPONSE_SCHEMA = {
               required: ["name", "index"],
             },
           },
-          setArray: { type: "array", items: { type: "integer" } },
           found: { type: "integer" },
+          active: { type: "array", items: { type: "string" } },
+          visit: { type: "array", items: { type: "string" } },
+          edge: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { from: { type: "string" }, to: { type: "string" } },
+              required: ["from", "to"],
+            },
+          },
+          label: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { id: { type: "string" }, text: { type: "string" } },
+              required: ["id", "text"],
+            },
+          },
+          queue: { type: "array", items: { type: "string" } },
+          gcompare: { type: "array", items: rc },
+          gset: { type: "array", items: rc },
+          gdone: { type: "array", items: rc },
+          gpath: { type: "array", items: rc },
         },
-        required: ["line", "caption"],
+        required: ["line", "say"],
       },
     },
   },
-  required: ["title", "description", "narration", "code", "array", "steps"],
+  required: ["title", "description", "narration", "viz", "code", "steps"],
 } as const;
 
 export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
@@ -110,45 +192,122 @@ export function buildRepairPrompt(topic: string, language: string, error: string
   ].join("\n");
 }
 
-/** Convert the raw Gemini object (pointers as list, setArray) into our form. */
+function numArray(v: unknown): number[] {
+  return Array.isArray(v)
+    ? (v as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n))
+    : [];
+}
+function pairArray(v: unknown): [number, number][] {
+  return Array.isArray(v)
+    ? (v as unknown[]).map((p) => numArray(p)).filter((p) => p.length >= 2).map((p) => [p[0], p[1]] as [number, number])
+    : [];
+}
+function strArray(v: unknown): string[] {
+  return Array.isArray(v) ? (v as unknown[]).map((s) => String(s)) : [];
+}
+
+const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "linkedlist"];
+
+/** Convert the raw Gemini object into our internal (renderer-ready) form. */
 export function normalizeSpec(raw: Record<string, unknown>, topic: string): GeneratedSpec {
-  const codeIn = Array.isArray(raw.code) ? (raw.code as unknown[]) : [];
-  const code = codeIn.map((l) => String(l)).slice(0, 14);
-  const arrayIn = Array.isArray(raw.array) ? (raw.array as unknown[]) : [];
-  const array = arrayIn.map((n) => Number(n)).filter((n) => Number.isFinite(n)).slice(0, 9);
+  const viz: VizKind = VIZ_KINDS.includes(raw.viz as VizKind) ? (raw.viz as VizKind) : "array";
+  const code = (Array.isArray(raw.code) ? (raw.code as unknown[]) : []).map((l) => String(l)).slice(0, 22);
+  const array = numArray(raw.array).slice(0, 12);
+
+  const nodes: GraphNode[] = Array.isArray(raw.nodes)
+    ? (raw.nodes as Record<string, unknown>[])
+        .filter((n) => n && n.id != null)
+        .map((n) => ({ id: String(n.id), x: Number(n.x) || 0, y: Number(n.y) || 0 }))
+    : [];
+  const edges: (string | number)[][] = Array.isArray(raw.edges)
+    ? (raw.edges as Record<string, unknown>[])
+        .filter((e) => e && e.from != null && e.to != null)
+        .map((e) =>
+          e.weight != null && Number.isFinite(Number(e.weight))
+            ? [String(e.from), String(e.to), Number(e.weight)]
+            : [String(e.from), String(e.to)],
+        )
+    : [];
+  const grid: number[][] = Array.isArray(raw.grid)
+    ? (raw.grid as unknown[]).map((row) => numArray(row)).filter((r) => r.length > 0)
+    : [];
 
   const stepsIn = Array.isArray(raw.steps) ? (raw.steps as Record<string, unknown>[]) : [];
-  const steps: SpecStep[] = stepsIn.slice(0, 40).map((s) => {
+  const steps: SpecStep[] = stepsIn.slice(0, 60).map((s) => {
     const pointers: Record<string, number> = {};
     if (Array.isArray(s.pointers)) {
       for (const p of s.pointers as Record<string, unknown>[]) {
-        if (p && typeof p.name === "string" && Number.isFinite(Number(p.index))) {
-          pointers[p.name] = Number(p.index);
-        }
+        if (p && typeof p.name === "string" && Number.isFinite(Number(p.index))) pointers[p.name] = Number(p.index);
+      }
+    } else if (s.pointers && typeof s.pointers === "object") {
+      for (const [k, v] of Object.entries(s.pointers as Record<string, unknown>)) {
+        if (Number.isFinite(Number(v))) pointers[k] = Number(v);
       }
     }
-    const setArray = Array.isArray(s.setArray)
-      ? (s.setArray as unknown[]).map((n) => Number(n))
-      : undefined;
+
+    const compare = numArray(s.compare).length ? numArray(s.compare) : numArray(s.highlight);
+    const sw = numArray(s.swap);
+    const swap: [number, number] | undefined = sw.length === 2 ? [sw[0], sw[1]] : undefined;
+    const rg = numArray(s.range);
+    const range: [number, number] | undefined = rg.length === 2 ? [rg[0], rg[1]] : undefined;
+    const set = pairArray(s.set);
+
+    // graph
+    const edge: [string, string][] = Array.isArray(s.edge)
+      ? (s.edge as Record<string, unknown>[])
+          .filter((e) => e && e.from != null && e.to != null)
+          .map((e) => [String(e.from), String(e.to)] as [string, string])
+      : [];
+    const label: Record<string, string> = {};
+    if (Array.isArray(s.label)) {
+      for (const l of s.label as Record<string, unknown>[]) {
+        if (l && l.id != null && l.text != null) label[String(l.id)] = String(l.text);
+      }
+    }
+    // grid triples
+    const gset: [number, number, number][] = Array.isArray(s.gset)
+      ? (s.gset as unknown[]).map((t) => numArray(t)).filter((t) => t.length >= 3).map((t) => [t[0], t[1], t[2]] as [number, number, number])
+      : [];
+
+    const say = (typeof s.say === "string" && s.say) || (typeof s.caption === "string" && s.caption) || "";
+
     return {
-      line: Math.max(1, Number(s.line) || 1),
-      caption: typeof s.caption === "string" ? s.caption : "",
-      highlight: Array.isArray(s.highlight)
-        ? (s.highlight as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n))
-        : [],
+      line: Math.min(Math.max(1, Number(s.line) || 1), Math.max(1, code.length)),
+      say,
+      compare,
+      swap,
+      set: set.length ? set : undefined,
+      range,
+      sorted: numArray(s.sorted),
       pointers,
-      array: setArray,
       found: Number.isFinite(Number(s.found)) ? Number(s.found) : null,
+      active: strArray(s.active),
+      visit: strArray(s.visit),
+      edge: edge.length ? edge : undefined,
+      label: Object.keys(label).length ? label : undefined,
+      queue: Array.isArray(s.queue) ? strArray(s.queue) : undefined,
+      gcompare: pairArray(s.gcompare),
+      gset: gset.length ? gset : undefined,
+      gdone: pairArray(s.gdone),
+      gpath: pairArray(s.gpath),
     };
   });
+
+  const narration =
+    (typeof raw.narration === "string" && raw.narration.trim()) ||
+    steps.map((s) => s.say).filter(Boolean).join(" ");
 
   return {
     title: (typeof raw.title === "string" && raw.title ? raw.title : topic).slice(0, 120),
     description: typeof raw.description === "string" ? raw.description.slice(0, 600) : "",
-    narration: typeof raw.narration === "string" ? raw.narration.slice(0, 1200) : "",
+    narration: narration.slice(0, 2000),
+    viz,
     code,
     array,
     target: Number.isFinite(Number(raw.target)) ? Number(raw.target) : null,
+    nodes: nodes.length ? nodes : undefined,
+    edges: edges.length ? edges : undefined,
+    grid: grid.length ? grid : undefined,
     steps,
   };
 }
@@ -158,43 +317,66 @@ export interface Validated {
   reason?: string;
 }
 
-/**
- * Structural validation — a HARD gate. If this fails the spec cannot render
- * (missing code, no example, out-of-range line numbers), so the pipeline must
- * repair or error rather than produce a broken video.
- */
+/** True if a step produces any visible change on the visualization. */
+function stepMoves(s: SpecStep): boolean {
+  return !!(
+    (s.compare && s.compare.length) ||
+    (s.swap && s.swap.length === 2) ||
+    (s.set && s.set.length) ||
+    (s.pointers && Object.keys(s.pointers).length) ||
+    (s.sorted && s.sorted.length) ||
+    (s.range && s.range.length === 2) ||
+    (s.active && s.active.length) ||
+    (s.visit && s.visit.length) ||
+    (s.edge && s.edge.length) ||
+    (s.label && Object.keys(s.label).length) ||
+    (s.queue && s.queue.length) ||
+    (s.gcompare && s.gcompare.length) ||
+    (s.gset && s.gset.length) ||
+    (s.gdone && s.gdone.length) ||
+    (s.gpath && s.gpath.length) ||
+    (s.highlight && s.highlight.length) ||
+    (s.array && s.array.length) ||
+    s.found != null
+  );
+}
+
+/** Structural validation — a HARD gate. */
 export function validateSpec(spec: GeneratedSpec): Validated {
   if (spec.code.length < 3) return { ok: false, reason: "Too few code lines." };
-  if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
   if (spec.steps.length < 2) return { ok: false, reason: "Too few steps." };
-  for (const s of spec.steps) {
-    if (s.line < 1 || s.line > spec.code.length) {
-      return { ok: false, reason: `Step references line ${s.line}, out of range.` };
+  if (spec.viz === "graph" || spec.viz === "tree") {
+    if (!spec.nodes || spec.nodes.length < 2) return { ok: false, reason: "Graph needs at least 2 nodes." };
+    const ids = new Set(spec.nodes.map((n) => n.id));
+    if (spec.edges) {
+      for (const e of spec.edges) {
+        if (!ids.has(String(e[0])) || !ids.has(String(e[1]))) {
+          return { ok: false, reason: `Edge references an unknown node: ${e[0]}-${e[1]}.` };
+        }
+      }
     }
+  } else if (spec.viz === "grid") {
+    if (!spec.grid || spec.grid.length < 1 || spec.grid[0].length < 1) {
+      return { ok: false, reason: "Grid is missing or empty." };
+    }
+  } else {
+    if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
   }
   return { ok: true };
 }
 
-/**
- * Quality check — a SOFT gate. A structurally valid spec whose right-side
- * visualization rarely moves (steps that only change 'line'/'caption') renders
- * fine, just less usefully. The pipeline uses this to TRY a repair, but still
- * renders the original if the repair doesn't land — a plain video beats an
- * error screen.
- */
+/** Quality check — a SOFT gate (triggers a repair but never blocks rendering). */
 export function vizChangesEnough(spec: GeneratedSpec): Validated {
-  const changing = spec.steps.filter(
-    (s) =>
-      (s.highlight && s.highlight.length > 0) ||
-      (s.pointers && Object.keys(s.pointers).length > 0) ||
-      (s.array && s.array.length > 0),
-  ).length;
+  const changing = spec.steps.filter(stepMoves).length;
   if (changing < Math.ceil(spec.steps.length * 0.6)) {
     return {
       ok: false,
-      reason:
-        "Most steps don't update the visualization. Every step should include highlight and/or pointers (and setArray on writes).",
+      reason: "Most steps don't update the visualization; every step should change the picture.",
     };
+  }
+  const withSay = spec.steps.filter((s) => s.say && s.say.trim().length > 0).length;
+  if (withSay < Math.ceil(spec.steps.length * 0.8)) {
+    return { ok: false, reason: "Most steps are missing a spoken 'say' line." };
   }
   return { ok: true };
 }

@@ -17,6 +17,14 @@ except the topic text you send to Gemini.
    - **Windows** — `.exe` installer
    - **Linux** — `.AppImage`
 2. Open it and launch **Visual Algos**.
+   - **macOS:** the app is ad-hoc signed but not notarized (no paid Apple
+     Developer cert), so the first launch is blocked as an "unidentified
+     developer." **Right-click the app → Open → Open** to run it (a normal
+     double-click won't offer the bypass). If macOS still says the app is
+     "damaged," clear the download quarantine once in Terminal:
+     ```bash
+     xattr -cr "/Applications/Visual Algos.app"
+     ```
 3. In **Settings**, paste a free **Gemini API key**
    ([get one here](https://aistudio.google.com/apikey)) — it's stored locally.
 4. Go to **New**, type a topic, and generate.
@@ -26,8 +34,9 @@ That's it. macOS and Windows builds are fully self-contained. Linux relies on
 that can run the app.
 
 > The installer is on the larger side (~250–350 MB) because it bundles a
-> complete Manim rendering runtime. Builds are currently **unsigned**, so on
-> first launch macOS Gatekeeper / Windows SmartScreen may ask you to confirm.
+> complete Manim rendering runtime. Builds are **not notarized** (no paid Apple
+> Developer / code-signing cert), so on first launch macOS Gatekeeper (see the
+> right-click → Open step above) / Windows SmartScreen may ask you to confirm.
 >
 > Mathematical formulas via LaTeX (`MathTex`) aren't bundled (LaTeX is
 > gigabytes); the app animates with on-screen `Text` instead.
