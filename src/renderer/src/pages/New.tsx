@@ -6,6 +6,8 @@ import {
   formatUsd,
   LANGUAGES,
   ORIENTATIONS,
+  providerLabel,
+  type AiProvider,
   type EnvStatus,
   type Orientation,
   type RenderQuality,
@@ -32,12 +34,14 @@ export function New({
   hasKey,
   env,
   hasElevenLabs,
+  provider,
   model,
 }: {
   canGenerate: boolean;
   hasKey: boolean;
   env: EnvStatus | null;
   hasElevenLabs: boolean;
+  provider: AiProvider;
   model: string;
 }) {
   const navigate = useNavigate();
@@ -90,7 +94,7 @@ export function New({
           <div>
             <p className="font-medium text-amber-200">Setup needed before you can generate</p>
             <ul className="mt-1.5 list-inside list-disc space-y-1 text-amber-100/80">
-              {!hasKey && <li>Add your Gemini API key.</li>}
+              {!hasKey && <li>Add your {providerLabel(provider)} API key.</li>}
               {env && !env.python.ok && <li>Python 3.10+ was not found.</li>}
               {env && env.python.ok && !env.manim.ok && <li>Manim is not installed.</li>}
             </ul>
@@ -218,7 +222,7 @@ export function New({
         )}
 
         {(() => {
-          const est = estimateVideoCost(model, narrate && hasElevenLabs);
+          const est = estimateVideoCost(provider, model, narrate && hasElevenLabs);
           return (
             <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-xs text-white/50">
               <span>Estimated API cost</span>
@@ -226,7 +230,7 @@ export function New({
                 ~{formatUsd(est.total)}
                 <span className="text-white/40">
                   {" "}
-                  ({formatUsd(est.gemini)} Gemini
+                  ({formatUsd(est.model)} {providerLabel(provider)}
                   {est.narration > 0 ? ` + ${formatUsd(est.narration)} voice` : ""}, rendering free)
                 </span>
               </span>
@@ -244,7 +248,8 @@ export function New({
         </button>
         <p className="text-center text-xs text-white/40">
           Rendering runs on your machine and can take a minute or two. You can leave this page.
-          Cost is approximate and depends on your API plan.
+          Cost is approximate and depends on your API plan — on OpenRouter it varies a lot by
+          model.
         </p>
       </form>
     </div>

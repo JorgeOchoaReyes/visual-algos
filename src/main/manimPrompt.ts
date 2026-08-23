@@ -193,6 +193,33 @@ export const RESPONSE_SCHEMA = {
 
 export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
 
+/**
+ * Providers without a native response-schema parameter (OpenRouter's OpenAI-
+ * compatible endpoint) get the same schema as prompt text instead.
+ */
+/**
+ * A full walkthrough spec (complete code + many richly-detailed steps) is
+ * large; without a high ceiling the JSON gets truncated mid-object and fails to
+ * parse. Both providers give it the same room.
+ */
+export const MAX_OUTPUT_TOKENS = 16384;
+
+/** Pull a JSON object out of a model response, tolerating fences / stray prose. */
+export function extractJson(text: string): string {
+  let t = (text || "").trim();
+  const fence = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(t);
+  if (fence) t = fence[1].trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start >= 0 && end > start) t = t.slice(start, end + 1);
+  return t;
+}
+
+export const SCHEMA_HINT = `The JSON you return MUST match this JSON Schema exactly:
+${JSON.stringify(RESPONSE_SCHEMA, null, 2)}
+
+Return the JSON object on its own — no prose, no markdown fences.`;
+
 export function buildUserPrompt(topic: string, language: string): string {
   return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\nProduce the walkthrough JSON now.`;
 }

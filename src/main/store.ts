@@ -3,8 +3,11 @@ import { DEFAULT_ELEVENLABS_MODEL, type Settings, type Visualization } from "@sh
 import { getPaths } from "./paths";
 
 const DEFAULT_SETTINGS: Settings = {
+  provider: "gemini",
   geminiApiKey: "",
   geminiModel: "gemini-2.5-flash",
+  openRouterApiKey: "",
+  openRouterModel: "google/gemini-2.5-flash",
   pythonPath: "",
   elevenLabsApiKey: "",
   elevenLabsVoiceId: "21m00Tcm4TlvDq8ikWAM",
@@ -31,7 +34,11 @@ function writeJson(file: string, data: unknown): void {
 
 export function getSettings(): Settings {
   const { settingsFile } = getPaths();
-  return { ...DEFAULT_SETTINGS, ...readJson<Partial<Settings>>(settingsFile, {}) };
+  const stored = readJson<Partial<Settings>>(settingsFile, {});
+  const settings = { ...DEFAULT_SETTINGS, ...stored };
+  // Settings written before OpenRouter support have no provider field.
+  if (settings.provider !== "openrouter") settings.provider = "gemini";
+  return settings;
 }
 
 export function setSettings(patch: Partial<Settings>): Settings {

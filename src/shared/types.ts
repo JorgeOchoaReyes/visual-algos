@@ -18,7 +18,7 @@ export const ORIENTATIONS: { id: Orientation; label: string; hint: string }[] = 
 ];
 
 export type VisualizationStatus =
-  | "generating" // Gemini is writing the Manim scene
+  | "generating" // the model is writing the walkthrough spec
   | "rendering" // manim is producing the MP4 locally
   | "ready" // video is on disk
   | "error";
@@ -65,8 +65,14 @@ export interface CreateVisualizationInput {
 }
 
 export interface Settings {
+  /** Which API the spec generation goes through. */
+  provider: AiProvider;
   geminiApiKey: string;
   geminiModel: string;
+  /** OpenRouter API key (used when provider is "openrouter"). */
+  openRouterApiKey: string;
+  /** OpenRouter model slug, e.g. "google/gemini-2.5-flash". */
+  openRouterModel: string;
   /** Optional explicit path to a python interpreter (else auto-detected). */
   pythonPath: string;
   /** ElevenLabs API key for narration (optional). */
@@ -77,6 +83,14 @@ export interface Settings {
   elevenLabsModel: string;
 }
 
+/** Where spec generation is sent. Both providers use a key you supply. */
+export type AiProvider = "gemini" | "openrouter";
+
+export const AI_PROVIDERS: { id: AiProvider; label: string; hint: string }[] = [
+  { id: "gemini", label: "Google Gemini", hint: "free tier · aistudio.google.com" },
+  { id: "openrouter", label: "OpenRouter", hint: "one key, many models" },
+];
+
 /** Suggested Gemini models for the Settings dropdown ("Custom…" allows any). */
 export const GEMINI_MODELS: { id: string; label: string; note?: string }[] = [
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "fast · recommended" },
@@ -86,6 +100,37 @@ export const GEMINI_MODELS: { id: string; label: string; note?: string }[] = [
   { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
 ];
 
+/**
+ * A few OpenRouter slugs that reliably return strict JSON ("Custom…" allows
+ * any). Any model works as long as it can follow the schema in the prompt.
+ */
+export const OPENROUTER_MODELS: { id: string; label: string; note?: string }[] = [
+  { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "fast · recommended" },
+  { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", note: "highest quality" },
+  { id: "openai/gpt-4o-mini", label: "GPT-4o mini", note: "cheap" },
+  { id: "openai/gpt-4o", label: "GPT-4o" },
+  { id: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
+  { id: "deepseek/deepseek-chat", label: "DeepSeek Chat", note: "very cheap" },
+  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+];
+
+/** The model id actually used for generation, given the settings. */
+export function activeModel(settings: Pick<Settings, "provider" | "geminiModel" | "openRouterModel">): string {
+  return settings.provider === "openrouter" ? settings.openRouterModel : settings.geminiModel;
+}
+
+/** Whether the selected provider has a key configured. */
+export function hasProviderKey(settings: Pick<Settings, "provider" | "geminiApiKey" | "openRouterApiKey"> | null): boolean {
+  if (!settings) return false;
+  return settings.provider === "openrouter"
+    ? !!settings.openRouterApiKey
+    : !!settings.geminiApiKey;
+}
+
+export function providerLabel(provider: AiProvider): string {
+  return AI_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
+}
+
 // --- Rough per-video cost estimate ------------------------------------------
 // These are APPROXIMATE public API rates (USD) and change over time / vary by
 // plan. They exist to give a ballpark, not a bill. Rendering is local = free.
@@ -93,6 +138,9 @@ const PRICING = {
   // $ per 1M tokens {input, output}. Pro tiers cost more than Flash tiers.
   geminiPro: { in: 1.25, out: 5.0 },
   geminiFlash: { in: 0.15, out: 0.6 },
+  // OpenRouter resells hundreds of models at wildly different rates, so this
+  // is a deliberately coarse mid-tier stand-in — see the note in the New page.
+  openRouter: { in: 0.5, out: 1.5 },
   // Approx tokens used per generation attempt.
   tokensIn: 1500,
   tokensOut: 3500,
@@ -101,22 +149,35 @@ const PRICING = {
   narrationChars: 650,
 };
 
+function modelRate(provider: AiProvider, model: string): { in: number; out: number } {
+  if (provider === "openrouter") {
+    // OpenRouter marks no-cost variants with a ":free" suffix.
+    if (/:free$/i.test(model)) return { in: 0, out: 0 };
+    return PRICING.openRouter;
+  }
+  return /pro/i.test(model) ? PRICING.geminiPro : PRICING.geminiFlash;
+}
+
 export interface CostEstimate {
-  gemini: number;
+  /** Cost of the spec generation call itself (whichever provider). */
+  model: number;
   narration: number;
   total: number;
 }
 
 /** Approximate cost for ONE generation attempt of a video. */
-export function estimateVideoCost(model: string, narrate: boolean): CostEstimate {
-  const isPro = /pro/i.test(model);
-  const rate = isPro ? PRICING.geminiPro : PRICING.geminiFlash;
-  const gemini =
+export function estimateVideoCost(
+  provider: AiProvider,
+  model: string,
+  narrate: boolean,
+): CostEstimate {
+  const rate = modelRate(provider, model);
+  const generation =
     (PRICING.tokensIn * rate.in + PRICING.tokensOut * rate.out) / 1_000_000;
   const narration = narrate
     ? (PRICING.narrationChars / 1000) * PRICING.elevenPer1kChars
     : 0;
-  return { gemini, narration, total: gemini + narration };
+  return { model: generation, narration, total: generation + narration };
 }
 
 /** Format a small dollar amount for display (e.g. "$0.002", "<$0.001"). */

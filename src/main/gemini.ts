@@ -1,15 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
-  RESPONSE_SCHEMA,
+  MAX_OUTPUT_TOKENS,
   SCHEMA_CAST,
   SYSTEM_INSTRUCTION,
   buildRepairPrompt,
   buildUserPrompt,
+  extractJson,
   normalizeSpec,
   type GeneratedSpec,
 } from "./manimPrompt";
-
-void RESPONSE_SCHEMA;
 
 function model(apiKey: string, modelName: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -20,23 +19,9 @@ function model(apiKey: string, modelName: string) {
       temperature: 0.5,
       responseMimeType: "application/json",
       responseSchema: SCHEMA_CAST,
-      // A full walkthrough spec (complete code + many richly-detailed steps) is
-      // large; without a high ceiling the JSON gets truncated mid-object and
-      // fails to parse. Give it plenty of room.
-      maxOutputTokens: 16384,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   });
-}
-
-/** Pull a JSON object out of a model response, tolerating fences / stray prose. */
-function extractJson(text: string): string {
-  let t = (text || "").trim();
-  const fence = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(t);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start >= 0 && end > start) t = t.slice(start, end + 1);
-  return t;
 }
 
 function parse(text: string, topic: string): GeneratedSpec {

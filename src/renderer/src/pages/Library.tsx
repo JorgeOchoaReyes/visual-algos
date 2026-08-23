@@ -13,7 +13,7 @@ export function Library() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Your videos</h1>
           <p className="mt-1 text-sm text-white/50">
-            Rendered locally — only the topic you enter is ever sent to Gemini.
+            Rendered locally — only the topic you enter is ever sent to the model.
           </p>
         </div>
         <Link to="/new" className="btn8">

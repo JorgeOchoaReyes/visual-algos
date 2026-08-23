@@ -15,7 +15,7 @@ import {
   patchVisualization,
   upsertVisualization,
 } from "./store";
-import { generateSpec, repairSpec } from "./gemini";
+import { generateSpec, repairSpec, resolveLlm } from "./llm";
 import { validateSpec, vizChangesEnough, type GeneratedSpec } from "./manimPrompt";
 import { renderSpec } from "./manim";
 import { buildAlignedNarration } from "./narration";
@@ -114,19 +114,17 @@ async function runPipeline(
   narrate: boolean,
 ): Promise<void> {
   try {
-    const settings = getSettings();
-    if (!settings.geminiApiKey) throw new Error("No Gemini API key set. Add one in Settings.");
-    const { geminiApiKey: key, geminiModel: model } = settings;
+    const llm = resolveLlm(getSettings());
 
     // 1. Generate the structured spec. Repair once if it's structurally
     //    invalid (a hard failure — can't render). Then, if it's valid but the
     //    visualization barely moves, TRY one repair to enrich it — but keep the
     //    valid original if the repair doesn't land, so we always ship a video.
-    let spec = await generateSpec(key, model, topic, language);
+    let spec = await generateSpec(llm, topic, language);
     let check = validateSpec(spec);
     if (!check.ok) {
       try {
-        const repaired = await repairSpec(key, model, topic, language, check.reason || "invalid");
+        const repaired = await repairSpec(llm, topic, language, check.reason || "invalid");
         if (validateSpec(repaired).ok) {
           spec = repaired;
           check = { ok: true };
@@ -140,8 +138,7 @@ async function runPipeline(
     if (!vizChangesEnough(spec).ok) {
       try {
         const enriched = await repairSpec(
-          key,
-          model,
+          llm,
           topic,
           language,
           vizChangesEnough(spec).reason || "thin visualization",
@@ -177,7 +174,7 @@ async function runPipeline(
     while (!render.ok && attempt < MAX_REPAIRS) {
       attempt += 1;
       try {
-        const fixed = await repairSpec(key, model, topic, language, render.error || "render failed");
+        const fixed = await repairSpec(llm, topic, language, render.error || "render failed");
         if (validateSpec(fixed).ok) {
           spec = fixed;
           applySpec(id, spec);
