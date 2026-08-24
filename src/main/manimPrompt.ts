@@ -1,15 +1,19 @@
 import type { SchemaType } from "@google/generative-ai";
 import type { ConceptRegister, Mode } from "@shared/types";
-import { SEFIROT_RESPONSE_SCHEMA, SEFIROT_SYSTEM_INSTRUCTION, compileSefirotSpec } from "./symbolic";
+import { GLYPH_RESPONSE_SCHEMA, GLYPH_SYSTEM_INSTRUCTION, compileGlyphSpec } from "./symbolic";
 
 export type VizKind = "array" | "graph" | "tree" | "grid" | "linkedlist" | "concept";
+
+export const ACTOR_KINDS = [
+  "dot", "circle", "square", "triangle", "star", "burst", "ring", "diamond", "cross",
+] as const;
 
 /** Actor in a concept scene (positions in a normalized 0-10 x 0-10 space, y up). */
 export interface ConceptActor {
   id: string;
   x: number;
   y: number;
-  kind?: "dot" | "circle" | "square";
+  kind?: (typeof ACTOR_KINDS)[number];
   color?: string; // role token: cyan | yellow | green | pink | gray
   size?: number; // 0.3-3, default 1
   label?: string;
@@ -263,7 +267,8 @@ Every step's "line" points at the argument line it animates (1-based).
 
 THE SCENE: a 0-10 x 0-10 space (x rightward, y UPWARD).
 - "actors" (6-12): the individuals/groups/institutions in motion.
-  {id, x, y, kind: dot|circle|square, color, size 0.3-3, label}.
+  {id, x, y, kind: dot|circle|square|triangle|star|burst|ring|diamond|cross,
+  color, size 0.3-3, label}.
   dots = ordinary agents; a larger circle/square = an institution or power.
 - "zones" (0-3): regions of the space. {id, x, y, w, h, shape: rect|circle,
   style: open|solid, color, label}. "open" draws a dashed border (a commons, a
@@ -431,12 +436,12 @@ export const CONCEPT_RESPONSE_SCHEMA = {
 
 export function promptFor(mode: Mode, register: ConceptRegister = "free"): string {
   if (mode !== "concept") return SYSTEM_INSTRUCTION;
-  return register === "sefirot" ? SEFIROT_SYSTEM_INSTRUCTION : CONCEPT_SYSTEM_INSTRUCTION;
+  return register === "glyphs" ? GLYPH_SYSTEM_INSTRUCTION : CONCEPT_SYSTEM_INSTRUCTION;
 }
 
 export function schemaFor(mode: Mode, register: ConceptRegister = "free"): Record<string, unknown> {
   if (mode !== "concept") return RESPONSE_SCHEMA as unknown as Record<string, unknown>;
-  return (register === "sefirot" ? SEFIROT_RESPONSE_SCHEMA : CONCEPT_RESPONSE_SCHEMA) as unknown as Record<string, unknown>;
+  return (register === "glyphs" ? GLYPH_RESPONSE_SCHEMA : CONCEPT_RESPONSE_SCHEMA) as unknown as Record<string, unknown>;
 }
 
 export function schemaCastFor(mode: Mode, register: ConceptRegister = "free"): { type: SchemaType } {
@@ -510,7 +515,7 @@ const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "linkedlist"];
 function parseActor(a: Record<string, unknown>): ConceptActor | null {
   if (!a || a.id == null || !Number.isFinite(Number(a.x)) || !Number.isFinite(Number(a.y))) return null;
   const actor: ConceptActor = { id: String(a.id), x: Number(a.x), y: Number(a.y) };
-  if (a.kind === "dot" || a.kind === "circle" || a.kind === "square") actor.kind = a.kind;
+  if ((ACTOR_KINDS as readonly string[]).includes(a.kind as string)) actor.kind = a.kind as ConceptActor["kind"];
   if (typeof a.color === "string" && a.color) actor.color = a.color;
   if (Number.isFinite(Number(a.size))) actor.size = Number(a.size);
   if (a.label != null && a.label !== "") actor.label = String(a.label);
@@ -540,8 +545,8 @@ export function normalizeSpec(
 ): GeneratedSpec {
   // A symbolic register replaces free-scene parsing with a deterministic
   // compile of the model's tree-parse.
-  if (mode === "concept" && register === "sefirot") {
-    return compileSefirotSpec(raw, topic);
+  if (mode === "concept" && register === "glyphs") {
+    return compileGlyphSpec(raw, topic);
   }
   // The mode is authoritative: a confused model can't cross modes.
   const viz: VizKind =

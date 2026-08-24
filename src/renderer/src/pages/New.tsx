@@ -180,10 +180,11 @@ export function New({
                 </button>
               ))}
             </div>
-            {register === "sefirot" && (
+            {register === "glyphs" && (
               <p className="mt-2 text-xs text-white/45">
-                The concept is parsed into the Tree of Life — same roles, same places, every
-                video. One symbolic language across your library.
+                The concept is parsed into a fixed lexicon — life, death, war, power, flow —
+                and each motif always gets the same glyph. One symbolic language across your
+                library; the layout stays free per concept.
               </p>
             )}
           </div>

@@ -45,7 +45,7 @@ function norm(input: CreateVisualizationInput) {
   const orientation: Orientation = input.orientation === "portrait" ? "portrait" : "landscape";
   const mode: Mode = input.mode === "concept" ? "concept" : "algorithm";
   const theme: VideoTheme = THEMES.includes(input.theme as VideoTheme) ? (input.theme as VideoTheme) : "8bit";
-  const register: ConceptRegister = mode === "concept" && input.register === "sefirot" ? "sefirot" : "free";
+  const register: ConceptRegister = mode === "concept" && input.register === "glyphs" ? "glyphs" : "free";
   // Concept videos show argument lines, not source code — render them plain.
   const language = mode === "concept" ? "text" : (input.language || "python").trim() || "python";
   const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;

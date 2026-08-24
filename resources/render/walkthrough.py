@@ -560,6 +560,27 @@ class ConceptSurface:
         elif kind == "square":
             shape = Square(0.5 * size, stroke_width=4, stroke_color=color,
                            fill_color=th["cell"], fill_opacity=1)
+        elif kind == "triangle":
+            shape = Triangle(stroke_width=4, stroke_color=color,
+                             fill_color=th["cell"], fill_opacity=1).scale(0.3 * size)
+        elif kind == "star":
+            shape = Star(n=5, outer_radius=0.32 * size, stroke_width=3,
+                         stroke_color=color, fill_color=color, fill_opacity=0.85)
+        elif kind == "burst":
+            shape = Star(n=8, outer_radius=0.34 * size, inner_radius=0.14 * size,
+                         stroke_width=3, stroke_color=color, fill_color=color, fill_opacity=0.85)
+        elif kind == "ring":
+            shape = Annulus(inner_radius=0.17 * size, outer_radius=0.30 * size,
+                            stroke_width=0, fill_color=color, fill_opacity=0.9)
+        elif kind == "diamond":
+            shape = Square(0.44 * size, stroke_width=4, stroke_color=color,
+                           fill_color=th["cell"], fill_opacity=1).rotate(PI / 4)
+        elif kind == "cross":
+            arm = 0.24 * size
+            shape = VGroup(
+                Line([-arm, -arm, 0], [arm, arm, 0], stroke_width=6, color=color),
+                Line([-arm, arm, 0], [arm, -arm, 0], stroke_width=6, color=color),
+            )
         else:
             shape = Dot(radius=0.13 * size, color=color)
         shape.move_to(self._pos(a.get("x", 5), a.get("y", 5))).set_z_index(2)

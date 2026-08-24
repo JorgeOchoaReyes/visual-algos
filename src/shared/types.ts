@@ -37,11 +37,11 @@ export const VIDEO_THEMES: { id: VideoTheme; label: string; hint: string }[] = [
 
 /** Symbolic register for concept mode: free scene, or a fixed symbolic
  * language whose roles compile to deterministic on-screen encodings. */
-export type ConceptRegister = "free" | "sefirot";
+export type ConceptRegister = "free" | "glyphs";
 
 export const REGISTERS: { id: ConceptRegister; label: string; hint: string }[] = [
   { id: "free", label: "Free scene", hint: "bespoke layout per concept" },
-  { id: "sefirot", label: "Tree of Life", hint: "qabbalistic register · one symbolic language" },
+  { id: "glyphs", label: "Glyphs", hint: "fixed motif lexicon · life, death, war, flow…" },
 ];
 
 export type VisualizationStatus =
