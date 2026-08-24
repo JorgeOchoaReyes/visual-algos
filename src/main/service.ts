@@ -7,6 +7,7 @@ import type {
   Mode,
   Orientation,
   RenderQuality,
+  VideoTheme,
   Visualization,
 } from "@shared/types";
 import {
@@ -35,23 +36,24 @@ function emit(viz: Visualization | null): void {
 }
 
 const MAX_REPAIRS = 2;
-const THEME = "8bit";
+const THEMES: VideoTheme[] = ["8bit", "ink", "slate", "manuscript"];
 
 function norm(input: CreateVisualizationInput) {
   const topic = (input.topic || "").trim();
   const quality: RenderQuality = input.quality === "l" || input.quality === "h" ? input.quality : "m";
   const orientation: Orientation = input.orientation === "portrait" ? "portrait" : "landscape";
   const mode: Mode = input.mode === "concept" ? "concept" : "algorithm";
+  const theme: VideoTheme = THEMES.includes(input.theme as VideoTheme) ? (input.theme as VideoTheme) : "8bit";
   // Concept videos show argument lines, not source code — render them plain.
   const language = mode === "concept" ? "text" : (input.language || "python").trim() || "python";
   const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;
-  return { topic, quality, orientation, language, narrate, mode };
+  return { topic, quality, orientation, language, narrate, mode, theme };
 }
 
 export async function createVisualization(
   input: CreateVisualizationInput,
 ): Promise<{ id: string }> {
-  const { topic, quality, orientation, language, narrate, mode } = norm(input);
+  const { topic, quality, orientation, language, narrate, mode, theme } = norm(input);
   if (topic.length < 3) throw new Error("Please enter a longer topic.");
 
   const now = Date.now();
@@ -65,6 +67,7 @@ export async function createVisualization(
     language,
     orientation,
     mode,
+    theme,
     tradition: null,
     manimCode: null,
     sceneName: null,
@@ -81,7 +84,7 @@ export async function createVisualization(
   upsertVisualization(viz);
   emit(viz);
 
-  void runPipeline(viz.id, topic, quality, orientation, language, narrate, mode);
+  void runPipeline(viz.id, topic, quality, orientation, language, narrate, mode, theme);
   return { id: viz.id };
 }
 
@@ -107,6 +110,7 @@ export async function regenerateVisualization(id: string): Promise<{ id: string 
     existing.language ?? "python",
     narrate,
     existing.mode ?? "algorithm",
+    existing.theme ?? "8bit",
   );
   return { id };
 }
@@ -119,6 +123,7 @@ async function runPipeline(
   language: string,
   narrate: boolean,
   mode: Mode,
+  theme: VideoTheme,
 ): Promise<void> {
   try {
     const llm = resolveLlm(getSettings());
@@ -177,7 +182,7 @@ async function runPipeline(
     }
 
     // 3. Render deterministically; repair+retry on failure.
-    let render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
+    let render = await renderSpec({ id, spec, language, orientation, quality, theme });
     let attempt = 0;
     while (!render.ok && attempt < MAX_REPAIRS) {
       attempt += 1;
@@ -196,7 +201,7 @@ async function runPipeline(
       } catch {
         break;
       }
-      render = await renderSpec({ id, spec, language, orientation, quality, theme: THEME });
+      render = await renderSpec({ id, spec, language, orientation, quality, theme });
     }
     if (!render.ok) {
       rmSync(narrationDir, { recursive: true, force: true });

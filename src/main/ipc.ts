@@ -7,6 +7,7 @@ import {
   getVisualization,
 } from "./store";
 import { checkEnv, installManim } from "./env";
+import { voiceSample } from "./elevenlabs";
 import {
   createVisualization,
   deleteVisualizationAndVideo,
@@ -49,6 +50,10 @@ export function registerIpc(): void {
   );
 
   ipcMain.handle(IPC.vizRegenerate, (_e, id: string) => regenerateVisualization(id));
+
+  ipcMain.handle(IPC.voiceSample, (_e, voiceId: string) =>
+    voiceSample({ apiKey: getSettings().elevenLabsApiKey, voiceId }),
+  );
 
   ipcMain.handle(IPC.vizDelete, (_e, id: string) => {
     deleteVisualizationAndVideo(id);

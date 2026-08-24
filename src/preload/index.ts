@@ -49,6 +49,11 @@ const api = {
   app: {
     version: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
   },
+  voices: {
+    /** Preview clip for an ElevenLabs voice, as a data URL for <audio>. */
+    sample: (voiceId: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
+      ipcRenderer.invoke(IPC.voiceSample, voiceId),
+  },
   setup: {
     onStatus: (cb: (state: SetupState) => void): (() => void) => {
       const handler = (_e: unknown, state: SetupState) => cb(state);

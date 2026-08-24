@@ -54,6 +54,16 @@ THEMES = {
         c_kw="#7cc4ff", c_fn="#22c58b", c_str="#a5e887", c_num="#f4b740",
         c_com="#5f6b7a", c_op="#c7d0da", c_def="#e9edf1", pixel=False,
     ),
+    # Scholarly: serif type on black, gold accents. The code panel stays
+    # monospace regardless of theme (its per-character layout needs it).
+    "manuscript": dict(
+        bg="#000000", panel="#0d0d0d", text="#f5f0e6", dim="#8f887a",
+        accent="#d4af37", accent2="#9db4d4", good="#7fb069", edge="#1f1f1f",
+        cell="#141414", compare="#9db4d4", swap="#c96a6a", rng="#1e1a14",
+        c_kw="#d4af37", c_fn="#9db4d4", c_str="#7fb069", c_num="#d99a4e",
+        c_com="#6b6558", c_op="#c96a6a", c_def="#f5f0e6", pixel=False,
+        font="Times New Roman",
+    ),
 }
 
 SPEC = json.load(open("spec.json", "r", encoding="utf-8"))
@@ -72,6 +82,9 @@ else:
     config.frame_height, config.frame_width = 8.0, 14.22
 
 FONT = "Monospace"
+# Display font for titles, captions and concept labels. Code panels and
+# data-structure text stay monospace (their column layout depends on it).
+TFONT = TH.get("font", FONT)
 
 
 def tok_color(t):
@@ -556,9 +569,9 @@ class ConceptSurface:
         h = shape.height if height is None else height
         return shape.get_center() + DOWN * (h / 2 + 0.18)
 
-    def _make_label(self, aid, text):
-        t = Text(str(text), font=FONT, font_size=14, color=self.th["dim"]).set_z_index(2)
-        return t.move_to(self._label_pos(self.shapes[aid]))
+    def _make_label(self, aid, text, pos=None):
+        t = Text(str(text), font=TFONT, font_size=14, color=self.th["dim"]).set_z_index(2)
+        return t.move_to(self._label_pos(self.shapes[aid]) if pos is None else pos)
 
     def _make_zone(self, z):
         th = self.th
@@ -577,9 +590,75 @@ class ConceptSurface:
         border.move_to(self._pos(z.get("x", 5), z.get("y", 5))).set_z_index(0)
         g = VGroup(border)
         if z.get("label"):
-            g.add(Text(str(z["label"]), font=FONT, font_size=15, color=color)
+            g.add(Text(str(z["label"]), font=TFONT, font_size=15, color=color)
                   .next_to(border, UP, buff=0.10).set_z_index(1))
         return g
+
+    def _zone_bbox(self, zid):
+        """(x0, y0, x1, y1) of a zone's border."""
+        b = self.zones[zid][0]
+        c = b.get_center()
+        return (c[0] - b.width / 2, c[1] - b.height / 2, c[0] + b.width / 2, c[1] + b.height / 2)
+
+    def _point_in_zone(self, p, zid, margin=0.0):
+        """Whether p lies inside the zone's border (+margin grows the zone)."""
+        if zid not in self.zones:
+            return False
+        z = self.zone_specs.get(zid, {})
+        b = self.zones[zid][0]
+        c = b.get_center()
+        if z.get("shape") == "circle":
+            return np.linalg.norm((p - c)[:2]) <= b.width / 2 + margin
+        x0, y0, x1, y1 = self._zone_bbox(zid)
+        return x0 - margin <= p[0] <= x1 + margin and y0 - margin <= p[1] <= y1 + margin
+
+    def _containing_zone(self, p):
+        for zid in self.zones:
+            if self._point_in_zone(p, zid):
+                return zid
+        return None
+
+    @staticmethod
+    def _rects_overlap(a, b):
+        return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+    def _pick_label_pos(self, center, sw, sh, lw, lh, occupied):
+        """First label slot (below/above/right/left of a shape) whose padded
+        rect collides with nothing in occupied; falls back to below."""
+        pad = 0.04
+        cands = [
+            center + DOWN * (sh / 2 + 0.18 + lh / 2),
+            center + UP * (sh / 2 + 0.18 + lh / 2),
+            center + RIGHT * (sw / 2 + 0.14 + lw / 2),
+            center + LEFT * (sw / 2 + 0.14 + lw / 2),
+        ]
+        for c in cands:
+            r = (c[0] - lw / 2 - pad, c[1] - lh / 2 - pad, c[0] + lw / 2 + pad, c[1] + lh / 2 + pad)
+            if not any(self._rects_overlap(r, o) for o in occupied):
+                return c
+        return cands[0]
+
+    def _occupied_rects(self, skip_labels=(), planned=None):
+        """Bounding rects of shapes and labels, for label placement. planned
+        maps actor id -> target center for shapes moving this step."""
+        planned = planned or {}
+        rects = []
+        for aid, sh in self.shapes.items():
+            c = planned.get(aid, sh.get_center())
+            rects.append((c[0] - sh.width / 2, c[1] - sh.height / 2,
+                          c[0] + sh.width / 2, c[1] + sh.height / 2))
+        for lid, t in self.labels.items():
+            if lid in skip_labels:
+                continue
+            c = t.get_center()
+            rects.append((c[0] - t.width / 2, c[1] - t.height / 2,
+                          c[0] + t.width / 2, c[1] + t.height / 2))
+        for zg in self.zones.values():
+            if len(zg) > 1:
+                c = zg[1].get_center()
+                rects.append((c[0] - zg[1].width / 2, c[1] - zg[1].height / 2,
+                              c[0] + zg[1].width / 2, c[1] + zg[1].height / 2))
+        return rects
 
     def _slot_in_zone(self, actor_id, zone_id):
         """Deterministic golden-angle slot inside a zone (stable across runs)."""
@@ -591,7 +670,10 @@ class ConceptSurface:
         crc = zlib.crc32(str(actor_id).encode())
         ang = (crc % 360) * PI / 180.0
         r = np.sqrt(((crc // 360) % 97 + 1) / 98.0)
-        return center + np.array([np.cos(ang) * rx * r, np.sin(ang) * ry * r, 0.0])
+        p = center + np.array([np.cos(ang) * rx * r, np.sin(ang) * ry * r, 0.0])
+        assert self._point_in_zone(p, zone_id, margin=0.05), (
+            f"enter slot for {actor_id} fell outside zone {zone_id}")
+        return p
 
     def _mk_link(self, a, b):
         return Line(self._center(a), self._center(b),
@@ -609,8 +691,15 @@ class ConceptSurface:
             if not aid or aid in self.shapes or aid in self.zones:
                 continue
             self.shapes[aid] = self._make_shape(a)
-            if a.get("label"):
-                self.labels[aid] = self._make_label(aid, a["label"])
+        for a in SPEC.get("actors", []) or []:
+            aid = str(a.get("id", ""))
+            if not a.get("label") or aid not in self.shapes or aid in self.labels:
+                continue
+            sh = self.shapes[aid]
+            probe = Text(str(a["label"]), font=TFONT, font_size=14)
+            pos = self._pick_label_pos(sh.get_center(), sh.width, sh.height,
+                                       probe.width, probe.height, self._occupied_rects())
+            self.labels[aid] = self._make_label(aid, a["label"], pos=pos)
         static = VGroup()
         for pair in SPEC.get("links", []) or []:
             a, b = str(pair[0]), str(pair[1])
@@ -651,11 +740,28 @@ class ConceptSurface:
             centroid = np.mean([self.shapes[i].get_center() for i in ids], axis=0)
             for i in ids:
                 p = self.shapes[i].get_center()
-                d = p - centroid
+                # Scattering means leaving: an actor inside a zone is pushed
+                # away from the ZONE's center until it is outside the fence.
+                zid = self._containing_zone(p)
+                origin = self.zones[zid][0].get_center() if zid else centroid
+                d = p - origin
                 if np.linalg.norm(d[:2]) < 1e-3:  # degenerate: hashed direction
                     ang = (zlib.crc32(i.encode()) % 12) * (2 * PI / 12)
                     d = np.array([np.cos(ang), np.sin(ang), 0.0])
-                targets[i] = self._clamp(p + d * 1.9)
+                d = d / np.linalg.norm(d[:2])
+                t = self._clamp(p + d * 1.9)
+                if zid:
+                    # walk outward until clear of the zone (region-clamped)
+                    for k in range(1, 9):
+                        if not self._point_in_zone(t, zid, margin=0.3):
+                            break
+                        t = self._clamp(p + d * (1.9 + k * 0.8))
+                    cx, cy, w, h = self.region
+                    zx0, zy0, zx1, zy1 = self._zone_bbox(zid)
+                    zone_fills_region = (zx1 - zx0 >= w - 0.9) and (zy1 - zy0 >= h - 0.9)
+                    assert zone_fills_region or not self._point_in_zone(t, zid), (
+                        f"scatter left {i} inside zone {zid}")
+                targets[i] = t
         for gr in step.get("grow", []) or []:
             aid = str(gr[0])
             if aid in self.shapes and len(gr) >= 2:
@@ -675,7 +781,11 @@ class ConceptSurface:
             self.shapes[aid] = self._make_shape(a)
             anims.append(GrowFromCenter(self.shapes[aid]))
             if a.get("label"):
-                self.labels[aid] = self._make_label(aid, a["label"])
+                sh = self.shapes[aid]
+                probe = Text(str(a["label"]), font=TFONT, font_size=14)
+                pos = self._pick_label_pos(sh.get_center(), sh.width, sh.height,
+                                           probe.width, probe.height, self._occupied_rects())
+                self.labels[aid] = self._make_label(aid, a["label"], pos=pos)
                 anims.append(FadeIn(self.labels[aid]))
 
         # one chained animation per actor shape
@@ -692,10 +802,16 @@ class ConceptSurface:
                 b = b.set_color(recolor[aid]) if isinstance(shape, Dot) else b.set_stroke(recolor[aid])
             anims.append(b)
             # the label follows: Transform covers move + text change together
-            new_h = shape.height * growf.get(aid, 1.0)
-            lp = targets.get(aid, shape.get_center()) + DOWN * (new_h / 2 + 0.18)
+            f = growf.get(aid, 1.0)
+            if aid in relabel or aid in self.labels:
+                txt = relabel.get(aid) or self.labels[aid].text
+                probe = Text(str(txt), font=TFONT, font_size=14)
+                lp = self._pick_label_pos(
+                    targets.get(aid, shape.get_center()), shape.width * f, shape.height * f,
+                    probe.width, probe.height,
+                    self._occupied_rects(skip_labels={aid}, planned=targets))
             if aid in relabel:
-                new = Text(relabel[aid], font=FONT, font_size=14, color=th["dim"]).move_to(lp).set_z_index(2)
+                new = Text(relabel[aid], font=TFONT, font_size=14, color=th["dim"]).move_to(lp).set_z_index(2)
                 if aid in self.labels:
                     anims.append(Transform(self.labels[aid], new))
                 else:
@@ -706,7 +822,12 @@ class ConceptSurface:
         # label-only restyle (actor didn't otherwise animate)
         for aid, txt in relabel.items():
             if aid in self.shapes and aid not in targets and aid not in recolor and aid not in growf:
-                new = self._make_label(aid, txt)
+                sh = self.shapes[aid]
+                probe = Text(str(txt), font=TFONT, font_size=14)
+                pos = self._pick_label_pos(
+                    sh.get_center(), sh.width, sh.height, probe.width, probe.height,
+                    self._occupied_rects(skip_labels={aid}, planned=targets))
+                new = self._make_label(aid, txt, pos=pos)
                 if aid in self.labels:
                     anims.append(Transform(self.labels[aid], new))
                 else:
@@ -842,12 +963,12 @@ class Walkthrough(Scene):
                                  height=code_lines.height + 0.6, fill_color=th["panel"], fill_opacity=1,
                                  stroke_color=th["accent"] if th["pixel"] else th["edge"], stroke_width=stroke).move_to(code_lines)
         code = VGroup(panel, code_lines)
-        title = Text(SPEC.get("title", "Algorithm"), font=FONT, weight=BOLD,
+        title = Text(SPEC.get("title", "Algorithm"), font=TFONT, weight=BOLD,
                      font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.35)
         # Whose account this animates (concept mode) — shown under the title.
         tradition = None
         if SPEC.get("tradition"):
-            tradition = Text(str(SPEC["tradition"]), font=FONT, font_size=16,
+            tradition = Text(str(SPEC["tradition"]), font=TFONT, font_size=16,
                              color=th["dim"]).next_to(title, DOWN, buff=0.12)
 
         if PORTRAIT:
@@ -907,7 +1028,7 @@ class Walkthrough(Scene):
         cap_w = config.frame_width - 1.2
 
         def make_caption(txt):
-            c = Text(txt or " ", font=FONT, font_size=18, color=th["text"])
+            c = Text(txt or " ", font=TFONT, font_size=18, color=th["text"])
             if c.width > cap_w:
                 c.scale_to_fit_width(cap_w)
             return c.to_edge(DOWN, buff=0.3)

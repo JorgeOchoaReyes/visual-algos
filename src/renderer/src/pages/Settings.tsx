@@ -4,8 +4,11 @@ import {
   Cpu,
   Download,
   KeyRound,
+  Loader2,
   MonitorCog,
+  Play,
   RefreshCw,
+  Square,
   Volume2,
 } from "lucide-react";
 import {
@@ -77,6 +80,51 @@ export function SettingsPage({
   const [pythonPath, setPythonPath] = useState("");
   const [elevenKey, setElevenKey] = useState("");
   const [voiceId, setVoiceId] = useState(ELEVENLABS_VOICES[0].id);
+  const [sampleState, setSampleState] = useState<"idle" | "loading" | "playing">("idle");
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  function stopSample() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setSampleState("idle");
+  }
+
+  async function playSample() {
+    if (sampleState === "playing") {
+      stopSample();
+      return;
+    }
+    setSampleError(null);
+    setSampleState("loading");
+    try {
+      const res = await window.api.voices.sample(voiceId.trim());
+      if (!res.ok || !res.dataUrl) {
+        setSampleError(res.error || "Could not load the voice sample.");
+        setSampleState("idle");
+        return;
+      }
+      const audio = new Audio(res.dataUrl);
+      audioRef.current = audio;
+      audio.onended = () => setSampleState("idle");
+      audio.onerror = () => {
+        setSampleError("Playback failed.");
+        setSampleState("idle");
+      };
+      await audio.play();
+      setSampleState("playing");
+    } catch (err) {
+      setSampleError(err instanceof Error ? err.message : "Could not play the sample.");
+      setSampleState("idle");
+    }
+  }
+
+  // Stop any playing sample when the voice changes or the page unmounts.
+  useEffect(() => stopSample, []);
+  useEffect(() => {
+    stopSample();
+    setSampleError(null);
+  }, [voiceId]);
   const [customVoice, setCustomVoice] = useState(false);
   const [voiceModel, setVoiceModel] = useState(DEFAULT_ELEVENLABS_MODEL);
   const [customVoiceModel, setCustomVoiceModel] = useState(false);
@@ -306,19 +354,39 @@ export function SettingsPage({
         </div>
         <div>
           <label className="mb-1.5 block text-xs text-white/60">Voice</label>
-          <Dropdown
-            value={customVoice ? CUSTOM : voiceId}
-            options={voiceOptions}
-            onChange={(v) => {
-              if (v === CUSTOM) {
-                setCustomVoice(true);
-                setVoiceId("");
-              } else {
-                setCustomVoice(false);
-                setVoiceId(v);
-              }
-            }}
-          />
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <Dropdown
+                value={customVoice ? CUSTOM : voiceId}
+                options={voiceOptions}
+                onChange={(v) => {
+                  if (v === CUSTOM) {
+                    setCustomVoice(true);
+                    setVoiceId("");
+                  } else {
+                    setCustomVoice(false);
+                    setVoiceId(v);
+                  }
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={playSample}
+              disabled={!elevenKey.trim() || !voiceId.trim() || sampleState === "loading"}
+              title={elevenKey.trim() ? "Play a sample of this voice" : "Add an API key to preview voices"}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-white/70 transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {sampleState === "loading" ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : sampleState === "playing" ? (
+                <Square size={13} />
+              ) : (
+                <Play size={15} />
+              )}
+            </button>
+          </div>
+          {sampleError && <p className="mt-1.5 text-xs text-red-300">{sampleError}</p>}
           {customVoice && (
             <input
               type="text"
