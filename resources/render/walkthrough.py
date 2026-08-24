@@ -10,6 +10,7 @@ per-step `dur` (set by the audio pass) so narration lines up with the visuals.
   viz = "tree"        -> same as graph, positions given by the spec
   viz = "grid"        -> 2-D cells (DP tables, matrices, grid pathfinding)
   viz = "linkedlist"  -> boxes with next-arrows (list traversal / search)
+  viz = "concept"     -> abstract-concept scene (actors / zones / links)
 
 The LLM only ever produces DATA (never Manim code), so renders stay safe.
 
@@ -19,9 +20,12 @@ Array   : compare[], swap[i,j], set[[i,v]], range[lo,hi], sorted[], highlight[],
 Graph   : active[], visit[], edge[[u,v]], label{id:txt}, queue[]
 Grid    : gcompare[[r,c]], gset[[r,c,v]], gdone[[r,c]], gpath[[r,c]]
 List    : compare[], set[[i,v]], pointers{name:index}, found
+Concept : move[[id,x,y]], enter[[id,zone]], scatter[], link/unlink[[a,b]],
+          enclose[], dissolve[], spawn[actors], grow[[id,f]], restyle[], pulse[]
 """
 
 import json
+import zlib
 import numpy as np
 from manim import *
 from pygments import lex
@@ -481,6 +485,316 @@ class ListSurface:
         return used
 
 
+class ConceptSurface:
+    """Abstract-concept scene: actors (dots/shapes), zones (regions) and links.
+
+    Spec coordinates are a normalized 0-10 x 0-10 space (y up) mapped linearly
+    into the region — a fixed map (not min/max fit) so mid-scene moves and
+    spawns land at absolute, predictable positions.
+
+    Step verbs: move[[id,x,y]], enter[[id,zone]], scatter[ids], link/unlink
+    [[a,b]], enclose[zone ids], dissolve[ids], spawn[actors], grow[[id,f]],
+    restyle[{id,color,label}], pulse[ids]. Unknown ids are ignored.
+
+    Actor shapes and their labels are SEPARATE mobjects (like GraphSurface's
+    nodes), and every mobject gets at most ONE animation per step — move,
+    recolor and grow are chained onto a single .animate builder — because two
+    animations on the same (or nested) mobjects in one play() override each
+    other.
+    """
+
+    def __init__(self, th, region):
+        self.th = th
+        self.region = region  # (cx, cy, w, h)
+        self.shapes = {}      # actor id -> shape mobject
+        self.labels = {}      # actor id -> label Text
+        self.zones = {}       # zone id -> VGroup(border[, label])
+        self.zone_specs = {}  # zone id -> zone dict from the spec
+        self.links = {}       # frozenset((a, b)) -> Line
+
+    def _color(self, name):
+        th = self.th
+        return {
+            "cyan": th["accent2"], "yellow": th["accent"], "green": th["good"],
+            "pink": th["swap"], "gray": th["dim"],
+        }.get(str(name or "cyan"), th["accent2"])
+
+    def _pos(self, x, y):
+        cx, cy, w, h = self.region
+        return np.array([cx + (float(x) / 10.0 - 0.5) * w,
+                         cy + (float(y) / 10.0 - 0.5) * h, 0.0])
+
+    def _clamp(self, p):
+        cx, cy, w, h = self.region
+        return np.array([max(cx - w / 2 + 0.2, min(p[0], cx + w / 2 - 0.2)),
+                         max(cy - h / 2 + 0.2, min(p[1], cy + h / 2 - 0.2)), 0.0])
+
+    def _center(self, oid):
+        if oid in self.shapes:
+            return self.shapes[oid].get_center()
+        if oid in self.zones:
+            return self.zones[oid][0].get_center()
+        return None
+
+    def _make_shape(self, a):
+        th = self.th
+        color = self._color(a.get("color"))
+        size = max(0.3, min(float(a.get("size") or 1), 3.0))
+        kind = a.get("kind", "dot")
+        if kind == "circle":
+            shape = Circle(radius=0.30 * size, stroke_width=4, stroke_color=color,
+                           fill_color=th["cell"], fill_opacity=1)
+        elif kind == "square":
+            shape = Square(0.5 * size, stroke_width=4, stroke_color=color,
+                           fill_color=th["cell"], fill_opacity=1)
+        else:
+            shape = Dot(radius=0.13 * size, color=color)
+        shape.move_to(self._pos(a.get("x", 5), a.get("y", 5))).set_z_index(2)
+        return shape
+
+    def _label_pos(self, shape, height=None):
+        h = shape.height if height is None else height
+        return shape.get_center() + DOWN * (h / 2 + 0.18)
+
+    def _make_label(self, aid, text):
+        t = Text(str(text), font=FONT, font_size=14, color=self.th["dim"]).set_z_index(2)
+        return t.move_to(self._label_pos(self.shapes[aid]))
+
+    def _make_zone(self, z):
+        th = self.th
+        cx, cy, w, h = self.region
+        color = self._color(z.get("color"))
+        zw = max(0.5, float(z.get("w") or 3) / 10.0 * w)
+        zh = max(0.5, float(z.get("h") or 3) / 10.0 * h)
+        if z.get("shape") == "circle":
+            border = Circle(radius=zw / 2, stroke_width=3, stroke_color=color, fill_opacity=0)
+        else:
+            border = Rectangle(width=zw, height=zh, stroke_width=3, stroke_color=color, fill_opacity=0)
+        if z.get("style") == "solid":
+            border.set_stroke(width=5)
+        else:
+            border = DashedVMobject(border, num_dashes=28)
+        border.move_to(self._pos(z.get("x", 5), z.get("y", 5))).set_z_index(0)
+        g = VGroup(border)
+        if z.get("label"):
+            g.add(Text(str(z["label"]), font=FONT, font_size=15, color=color)
+                  .next_to(border, UP, buff=0.10).set_z_index(1))
+        return g
+
+    def _slot_in_zone(self, actor_id, zone_id):
+        """Deterministic golden-angle slot inside a zone (stable across runs)."""
+        if zone_id not in self.zones:
+            return None
+        border = self.zones[zone_id][0]
+        center = border.get_center()
+        rx, ry = border.width / 2 * 0.7, border.height / 2 * 0.7
+        crc = zlib.crc32(str(actor_id).encode())
+        ang = (crc % 360) * PI / 180.0
+        r = np.sqrt(((crc // 360) % 97 + 1) / 98.0)
+        return center + np.array([np.cos(ang) * rx * r, np.sin(ang) * ry * r, 0.0])
+
+    def _mk_link(self, a, b):
+        return Line(self._center(a), self._center(b),
+                    stroke_width=2.5, color=self.th["dim"]).set_z_index(0)
+
+    def build(self, scene):
+        for z in SPEC.get("zones", []) or []:
+            zid = str(z.get("id", ""))
+            if not zid or zid in self.zones:
+                continue
+            self.zone_specs[zid] = dict(z)
+            self.zones[zid] = self._make_zone(z)
+        for a in SPEC.get("actors", []) or []:
+            aid = str(a.get("id", ""))
+            if not aid or aid in self.shapes or aid in self.zones:
+                continue
+            self.shapes[aid] = self._make_shape(a)
+            if a.get("label"):
+                self.labels[aid] = self._make_label(aid, a["label"])
+        static = VGroup()
+        for pair in SPEC.get("links", []) or []:
+            a, b = str(pair[0]), str(pair[1])
+            key = frozenset((a, b))
+            if a != b and key not in self.links and self._center(a) is not None and self._center(b) is not None:
+                ln = self._mk_link(a, b)
+                self.links[key] = ln
+                static.add(ln)
+        zgrps = list(self.zones.values())
+        if zgrps or len(static):
+            scene.play(*[Create(z) for z in zgrps], Create(static), run_time=0.3)
+        actors = list(self.shapes.values())
+        if actors:
+            scene.play(LaggedStart(*[GrowFromCenter(m) for m in actors], lag_ratio=0.04, run_time=0.35),
+                       *[FadeIn(t) for t in self.labels.values()])
+
+    def apply(self, step):
+        th, anims = self.th, []
+
+        # --- plan per-actor updates so each mobject animates at most once ----
+        targets = {}   # id -> final position
+        recolor = {}   # id -> color
+        relabel = {}   # id -> label text
+        growf = {}     # id -> scale factor
+
+        for m in step.get("move", []) or []:
+            aid = str(m[0])
+            if aid in self.shapes and len(m) >= 3:
+                targets[aid] = self._clamp(self._pos(m[1], m[2]))
+        for e in step.get("enter", []) or []:
+            aid, zid = str(e[0]), str(e[1])
+            if aid in self.shapes:
+                p = self._slot_in_zone(aid, zid)
+                if p is not None:
+                    targets[aid] = self._clamp(p)
+        ids = [str(i) for i in (step.get("scatter", []) or []) if str(i) in self.shapes]
+        if ids:
+            centroid = np.mean([self.shapes[i].get_center() for i in ids], axis=0)
+            for i in ids:
+                p = self.shapes[i].get_center()
+                d = p - centroid
+                if np.linalg.norm(d[:2]) < 1e-3:  # degenerate: hashed direction
+                    ang = (zlib.crc32(i.encode()) % 12) * (2 * PI / 12)
+                    d = np.array([np.cos(ang), np.sin(ang), 0.0])
+                targets[i] = self._clamp(p + d * 1.9)
+        for gr in step.get("grow", []) or []:
+            aid = str(gr[0])
+            if aid in self.shapes and len(gr) >= 2:
+                growf[aid] = max(0.3, min(float(gr[1]), 3.0))
+        for r in step.get("restyle", []) or []:
+            aid = str(r.get("id", ""))
+            if r.get("color") and (aid in self.shapes or aid in self.zones):
+                recolor[aid] = self._color(r["color"])
+            if r.get("label") and (aid in self.shapes or aid in self.zones):
+                relabel[aid] = str(r["label"])
+
+        # spawn: new actors appear this step
+        for a in step.get("spawn", []) or []:
+            aid = str(a.get("id", ""))
+            if not aid or aid in self.shapes or aid in self.zones:
+                continue
+            self.shapes[aid] = self._make_shape(a)
+            anims.append(GrowFromCenter(self.shapes[aid]))
+            if a.get("label"):
+                self.labels[aid] = self._make_label(aid, a["label"])
+                anims.append(FadeIn(self.labels[aid]))
+
+        # one chained animation per actor shape
+        for aid in set(list(targets) + list(recolor) + list(growf)):
+            if aid not in self.shapes:
+                continue
+            shape = self.shapes[aid]
+            b = shape.animate
+            if aid in growf:
+                b = b.scale(growf[aid])
+            if aid in targets:
+                b = b.move_to(targets[aid])
+            if aid in recolor:
+                b = b.set_color(recolor[aid]) if isinstance(shape, Dot) else b.set_stroke(recolor[aid])
+            anims.append(b)
+            # the label follows: Transform covers move + text change together
+            new_h = shape.height * growf.get(aid, 1.0)
+            lp = targets.get(aid, shape.get_center()) + DOWN * (new_h / 2 + 0.18)
+            if aid in relabel:
+                new = Text(relabel[aid], font=FONT, font_size=14, color=th["dim"]).move_to(lp).set_z_index(2)
+                if aid in self.labels:
+                    anims.append(Transform(self.labels[aid], new))
+                else:
+                    self.labels[aid] = new
+                    anims.append(FadeIn(new))
+            elif aid in self.labels:
+                anims.append(self.labels[aid].animate.move_to(lp))
+        # label-only restyle (actor didn't otherwise animate)
+        for aid, txt in relabel.items():
+            if aid in self.shapes and aid not in targets and aid not in recolor and aid not in growf:
+                new = self._make_label(aid, txt)
+                if aid in self.labels:
+                    anims.append(Transform(self.labels[aid], new))
+                else:
+                    self.labels[aid] = new
+                    anims.append(FadeIn(new))
+
+        # links follow moved endpoints
+        for key, ln in self.links.items():
+            a, b = tuple(key)
+            if a in targets or b in targets:
+                pa = targets.get(a, self._center(a))
+                pb = targets.get(b, self._center(b))
+                if pa is not None and pb is not None:
+                    anims.append(ln.animate.put_start_and_end_on(pa, pb))
+
+        # link / unlink
+        for pair in step.get("link", []) or []:
+            a, b = str(pair[0]), str(pair[1])
+            key = frozenset((a, b))
+            if a == b or key in self.links:
+                continue
+            pa = targets.get(a, self._center(a))
+            pb = targets.get(b, self._center(b))
+            if pa is None or pb is None:
+                continue
+            ln = Line(pa, pb, stroke_width=2.5, color=th["dim"]).set_z_index(0)
+            self.links[key] = ln
+            anims.append(Create(ln))
+        for pair in step.get("unlink", []) or []:
+            key = frozenset((str(pair[0]), str(pair[1])))
+            ln = self.links.pop(key, None)
+            if ln is not None:
+                anims.append(Succession(ln.animate(run_time=0.15).set_stroke(th["swap"], 4),
+                                        FadeOut(ln, run_time=0.25)))
+
+        # zone updates (enclose / restyle) — merged into ONE Transform per zone,
+        # since two animations on the same mobject in one play() crash Manim
+        zone_updates = {}
+        for zid in step.get("enclose", []) or []:
+            zid = str(zid)
+            if zid in self.zones:
+                zone_updates.setdefault(zid, {})["style"] = "solid"
+        for r in step.get("restyle", []) or []:
+            zid = str(r.get("id", ""))
+            if zid not in self.zones:
+                continue
+            if r.get("color"):
+                zone_updates.setdefault(zid, {})["color"] = str(r["color"])
+            if r.get("label"):
+                zone_updates.setdefault(zid, {})["label"] = str(r["label"])
+        for zid, upd in zone_updates.items():
+            self.zone_specs[zid] = {**self.zone_specs[zid], **upd}
+            anims.append(Transform(self.zones[zid], self._make_zone(self.zone_specs[zid])))
+
+        # dissolve: fade + unregister; purge links touching the object
+        for did in step.get("dissolve", []) or []:
+            did = str(did)
+            gone = []
+            if did in self.shapes:
+                gone.append(self.shapes.pop(did))
+                if did in self.labels:
+                    gone.append(self.labels.pop(did))
+            elif did in self.zones:
+                gone.append(self.zones.pop(did))
+                self.zone_specs.pop(did, None)
+            if not gone:
+                continue
+            anims += [FadeOut(m) for m in gone]
+            for key in [k for k in self.links if did in k]:
+                anims.append(FadeOut(self.links.pop(key)))
+
+        # pulse: emphasis — skipped for objects already animating this step
+        busy = set(list(targets) + list(recolor) + list(growf) + list(relabel))
+        for pid in step.get("pulse", []) or []:
+            pid = str(pid)
+            if pid in busy:
+                continue
+            if pid in self.shapes:
+                anims.append(Indicate(self.shapes[pid], color=th["accent"]))
+            elif pid in self.zones:
+                anims.append(Indicate(self.zones[pid], color=th["accent"]))
+        return anims
+
+    def extra(self, scene, step, dur, used):
+        return used
+
+
+
 def _ptr(name, color, up=False):
     tri = Triangle(fill_color=color, fill_opacity=1, stroke_width=0).scale(0.11)
     if not up:
@@ -500,7 +814,10 @@ class Walkthrough(Scene):
 
         one = Text("M", font=FONT, font_size=fs); two = Text("MM", font=FONT, font_size=fs)
         cw = two.width - one.width; chh = one.height; line_h = chh + 0.24
-        lexer = get_lexer_by_name(SPEC.get("language", "python"))
+        try:
+            lexer = get_lexer_by_name(SPEC.get("language", "python"))
+        except Exception:
+            lexer = get_lexer_by_name("text")
 
         def line_chars(src):
             out = []
@@ -527,17 +844,24 @@ class Walkthrough(Scene):
         code = VGroup(panel, code_lines)
         title = Text(SPEC.get("title", "Algorithm"), font=FONT, weight=BOLD,
                      font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.35)
+        # Whose account this animates (concept mode) — shown under the title.
+        tradition = None
+        if SPEC.get("tradition"):
+            tradition = Text(str(SPEC["tradition"]), font=FONT, font_size=16,
+                             color=th["dim"]).next_to(title, DOWN, buff=0.12)
 
         if PORTRAIT:
             region_w, region_h = config.frame_width - 0.8, config.frame_height * 0.42
         else:
             region_w, region_h = config.frame_width * 0.48, config.frame_height - 2.2
+        if tradition is not None:
+            region_h -= 0.5
         code.scale(min(region_w / code.width, region_h / code.height, 1.0))
         code_scale = code[0].height / (code_lines.height + 0.6)
         if PORTRAIT:
-            code.next_to(title, DOWN, buff=0.5)
+            code.next_to(tradition if tradition is not None else title, DOWN, buff=0.5)
         else:
-            code.to_edge(LEFT, buff=0.45).set_y(-0.2)
+            code.to_edge(LEFT, buff=0.45).set_y(-0.2 if tradition is None else -0.35)
 
         def hl_for(i):
             ln = code_lines[i]
@@ -562,11 +886,15 @@ class Walkthrough(Scene):
             surface = GridSurface(th, gg_region)
         elif VIZ == "linkedlist":
             surface = ListSurface(th, list_region)
+        elif VIZ == "concept":
+            surface = ConceptSurface(th, gg_region)
         else:
             surface = ArraySurface(th, arr_region)
 
         # intro (~INTRO_SECONDS)
-        self.play(FadeIn(title, shift=DOWN * 0.2), run_time=0.5)
+        self.play(FadeIn(title, shift=DOWN * 0.2),
+                  *([FadeIn(tradition, shift=DOWN * 0.2)] if tradition is not None else []),
+                  run_time=0.5)
         self.add(panel)
         self.play(LaggedStart(*[FadeIn(l) for l in code_lines], lag_ratio=0.04, run_time=0.8))
         surface.build(self)

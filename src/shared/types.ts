@@ -17,6 +17,14 @@ export const ORIENTATIONS: { id: Orientation; label: string; hint: string }[] = 
   { id: "portrait", label: "Portrait", hint: "9:16 · Shorts/TikTok" },
 ];
 
+/** What kind of video: a CS algorithm walkthrough, or an abstract concept. */
+export type Mode = "algorithm" | "concept";
+
+export const MODES: { id: Mode; label: string; hint: string; badge?: string }[] = [
+  { id: "algorithm", label: "Algorithm", hint: "code + data structure" },
+  { id: "concept", label: "Concept", hint: "social theory · abstract ideas", badge: "New!" },
+];
+
 export type VisualizationStatus =
   | "generating" // the model is writing the walkthrough spec
   | "rendering" // manim is producing the MP4 locally
@@ -35,6 +43,10 @@ export interface Visualization {
   sceneName: string | null;
   /** Programming language of the generated code. */
   language: string;
+  /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
+  mode: Mode;
+  /** Whose account a concept video animates (e.g. "Marx, Capital Vol. I"). */
+  tradition: string | null;
   /** Video aspect: landscape (16:9) or portrait (9:16). */
   orientation: Orientation;
   /** Absolute path to the rendered mp4 on disk (once ready). */
@@ -62,6 +74,8 @@ export interface CreateVisualizationInput {
   language?: string;
   /** Video aspect (default landscape). */
   orientation?: Orientation;
+  /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
+  mode?: Mode;
 }
 
 export interface Settings {
