@@ -1,6 +1,9 @@
 import type { SchemaType } from "@google/generative-ai";
 
-export type VizKind = "array" | "graph" | "tree" | "grid" | "linkedlist";
+export type VizKind = "array" | "graph" | "tree" | "grid" | "linkedlist" | "none";
+
+/** How the left panel is presented (independent of the visualization). */
+export type PanelMode = "code" | "concept" | "visual";
 
 export interface GraphNode {
   id: string;
@@ -43,8 +46,9 @@ export interface GeneratedSpec {
   title: string;
   description: string;
   narration: string;
+  mode: PanelMode;
   viz: VizKind;
-  code: string[];
+  code: string[]; // source lines (mode "code") or bullet points (mode "concept")
   array: number[]; // array / linkedlist
   target?: number | null;
   nodes?: GraphNode[]; // graph / tree
@@ -53,37 +57,53 @@ export interface GeneratedSpec {
   steps: SpecStep[];
 }
 
-export const SYSTEM_INSTRUCTION = `You explain computer-science algorithms as short, precise, step-by-step
-animations. You DO NOT write animation code — you output structured DATA that a
-fixed renderer turns into a video: the algorithm's source code on the left, a
-data-structure visualization on the right, and an ordered list of steps. Each
-step highlights ONE code line, updates the visualization, AND carries the exact
-sentence the narrator speaks — so code, visuals and voice stay locked together.
+export const SYSTEM_INSTRUCTION = `You explain ANY topic as a short, precise, step-by-step animation. You DO NOT
+write animation code — you output structured DATA that a fixed renderer turns
+into a video: a left panel, a visualization, and an ordered list of steps. Each
+step highlights ONE panel line, updates the visualization, AND carries the exact
+sentence the narrator speaks — so panel, visuals and voice stay locked together.
 
-PICK THE RIGHT VISUALIZATION with "viz":
+FIRST decide the presentation "mode" from the topic:
+  "code"    – programming / algorithms. The panel is real SOURCE CODE, and
+              usually pair it with a data-structure viz (array/graph/grid/…).
+  "concept" – math, science, history, philosophy, or any idea best explained in
+              words. The panel is 5–12 short BULLET POINTS (NOT code). Pair with
+              a viz when a picture helps (a concept-map "graph", a comparison
+              "grid"), or "none" for a points-only explainer.
+  "visual"  – the picture carries everything and no panel is needed; the viz
+              fills the frame (leave "code" empty).
+
+Then set "viz" to the visualization (or "none"):
   "array"      – sorting, searching, two-pointer, sliding window (drawn as bars)
   "graph"      – BFS, DFS, Dijkstra, topological sort (nodes + edges)
   "tree"       – BST, heap, tree traversals (nodes + edges with positions)
   "grid"       – dynamic programming tables, matrices, grid pathfinding
   "linkedlist" – linked-list traversal / search / build
+  "none"       – no right-side visualization (points-only concept explainers)
 
-CRITICAL: match the visualization to the DATA STRUCTURE the algorithm operates
-on, not to what's convenient. If the algorithm works on a graph or tree — it
-mentions nodes, neighbors, adjacency, edges, traversal, shortest path, BFS/DFS,
-Dijkstra, topological order, or a tree/heap — you MUST use viz "graph" or "tree"
-and provide real "nodes" and "edges". NEVER encode a graph as an array or an
-adjacency matrix and render it as bars — that hides the actual structure. Same
-for grids (use "grid") and linked lists (use "linkedlist").
+Examples: "quicksort" → mode code, viz array. "Dijkstra" → mode code, viz graph.
+"the trolley problem" → mode concept, viz none (or a graph concept-map).
+"branches of philosophy" → mode concept, viz graph. "how a binary search tree
+works" → mode code, viz tree. "compare TCP vs UDP" → mode concept, viz grid.
 
-CODE RULES (all viz)
-- Write COMPLETE, correct, runnable code (6–20 short lines). NEVER stub or hide
-  logic behind a placeholder or an unshown helper (no "_merge(...) # complex"):
-  write the full body so a viewer can see how it actually works.
-- Every step: "line" (1-based code line) + "say" (ONE spoken sentence describing
-  exactly what happens this step). The three tracks MUST agree: the highlighted
-  line does this step, "say" narrates it, the visualization changes to match.
-- Never emit a step that only changes line + say with no visual change. Aim for
-  12–34 steps. Also give an overall "narration" (the say lines joined).
+CRITICAL (mode code): match the visualization to the DATA STRUCTURE the algorithm
+operates on. If it works on a graph or tree — nodes, neighbors, adjacency, edges,
+traversal, shortest path, BFS/DFS, Dijkstra, topological order, a tree/heap — you
+MUST use viz "graph"/"tree" with real "nodes" and "edges". NEVER encode a graph
+as an array/adjacency-matrix of bars. Same for grids and linked lists.
+
+PANEL RULES
+- mode "code": the "code" array is COMPLETE, correct, runnable code (6–20 short
+  lines). NEVER stub or hide logic behind a placeholder or an unshown helper (no
+  "_merge(...) # complex"): write the full body so a viewer sees how it works.
+- mode "concept": the "code" array is 5–12 SHORT bullet points in plain language
+  (a phrase each, not code). Each step highlights one point as the narrator
+  reaches it.
+- mode "visual": leave "code" empty; the viz carries the explanation.
+- Every step: "line" (1-based index into the panel; omit/1 for visual mode) +
+  "say" (ONE spoken sentence for this step). The tracks MUST agree: the
+  highlighted line, the spoken "say", and the visualization change all match.
+- Aim for 8–34 steps. Also give an overall "narration" (the say lines joined).
 
 DATA SIZE — use ENOUGH data for a meaningful visualization (this matters a lot):
   arrays: 8–12 elements (never fewer than 8); linked lists: 6–9 nodes; graphs:
@@ -118,6 +138,7 @@ export const RESPONSE_SCHEMA = {
     title: { type: "string" },
     description: { type: "string" },
     narration: { type: "string" },
+    mode: { type: "string" },
     viz: { type: "string" },
     code: { type: "array", items: { type: "string" } },
     array: { type: "array", items: { type: "integer" } },
@@ -188,7 +209,7 @@ export const RESPONSE_SCHEMA = {
       },
     },
   },
-  required: ["title", "description", "narration", "viz", "code", "steps"],
+  required: ["title", "description", "narration", "mode", "viz", "steps"],
 } as const;
 
 export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
@@ -220,10 +241,12 @@ function strArray(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).map((s) => String(s)) : [];
 }
 
-const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "linkedlist"];
+const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "linkedlist", "none"];
+const MODES: PanelMode[] = ["code", "concept", "visual"];
 
 /** Convert the raw Gemini object into our internal (renderer-ready) form. */
 export function normalizeSpec(raw: Record<string, unknown>, topic: string): GeneratedSpec {
+  const mode: PanelMode = MODES.includes(raw.mode as PanelMode) ? (raw.mode as PanelMode) : "code";
   const viz: VizKind = VIZ_KINDS.includes(raw.viz as VizKind) ? (raw.viz as VizKind) : "array";
   const code = (Array.isArray(raw.code) ? (raw.code as unknown[]) : []).map((l) => String(l)).slice(0, 22);
   const array = numArray(raw.array).slice(0, 12);
@@ -315,6 +338,7 @@ export function normalizeSpec(raw: Record<string, unknown>, topic: string): Gene
     title: (typeof raw.title === "string" && raw.title ? raw.title : topic).slice(0, 120),
     description: typeof raw.description === "string" ? raw.description.slice(0, 600) : "",
     narration: narration.slice(0, 2000),
+    mode,
     viz,
     code,
     array,
@@ -357,8 +381,12 @@ function stepMoves(s: SpecStep): boolean {
 
 /** Structural validation — a HARD gate. */
 export function validateSpec(spec: GeneratedSpec): Validated {
-  if (spec.code.length < 3) return { ok: false, reason: "Too few code lines." };
   if (spec.steps.length < 2) return { ok: false, reason: "Too few steps." };
+  // The panel: code and concept modes both need panel lines; visual mode doesn't.
+  if (spec.mode !== "visual" && spec.code.length < 2) {
+    return { ok: false, reason: "Too few panel lines (code or bullet points)." };
+  }
+  // The visualization: only check the data for the chosen viz.
   if (spec.viz === "graph" || spec.viz === "tree") {
     if (!spec.nodes || spec.nodes.length < 2) return { ok: false, reason: "Graph needs at least 2 nodes." };
     const ids = new Set(spec.nodes.map((n) => n.id));
@@ -373,8 +401,12 @@ export function validateSpec(spec: GeneratedSpec): Validated {
     if (!spec.grid || spec.grid.length < 1 || spec.grid[0].length < 1) {
       return { ok: false, reason: "Grid is missing or empty." };
     }
-  } else {
+  } else if (spec.viz === "array" || spec.viz === "linkedlist") {
     if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
+  }
+  // viz "none" needs no data — a panel-only explainer.
+  if (spec.mode === "visual" && spec.viz === "none") {
+    return { ok: false, reason: "A visual-mode spec needs a visualization (viz can't be none)." };
   }
   return { ok: true };
 }
@@ -393,18 +425,22 @@ export function vizChangesEnough(spec: GeneratedSpec): Validated {
     if (rows < 3 || cols < 3) {
       return { ok: false, reason: "Grid is too small — use at least 4×4 (3×4 minimum)." };
     }
-  } else {
+  } else if (spec.viz === "array" || spec.viz === "linkedlist") {
     if (spec.array.length < 7) {
       return { ok: false, reason: "Array example is too small — use 8–12 elements for a meaningful visualization." };
     }
   }
 
-  const changing = spec.steps.filter(stepMoves).length;
-  if (changing < Math.ceil(spec.steps.length * 0.6)) {
-    return {
-      ok: false,
-      reason: "Most steps don't update the visualization; every step should change the picture.",
-    };
+  // "Movement" only matters when there's a visualization. For a points-only
+  // concept explainer (viz none), the step just advances the highlighted point.
+  if (spec.viz !== "none") {
+    const changing = spec.steps.filter(stepMoves).length;
+    if (changing < Math.ceil(spec.steps.length * 0.6)) {
+      return {
+        ok: false,
+        reason: "Most steps don't update the visualization; every step should change the picture.",
+      };
+    }
   }
   const withSay = spec.steps.filter((s) => s.say && s.say.trim().length > 0).length;
   if (withSay < Math.ceil(spec.steps.length * 0.8)) {
