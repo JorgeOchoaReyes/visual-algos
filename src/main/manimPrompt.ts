@@ -1,5 +1,6 @@
 import type { SchemaType } from "@google/generative-ai";
-import type { Mode } from "@shared/types";
+import type { ConceptRegister, Mode } from "@shared/types";
+import { SEFIROT_RESPONSE_SCHEMA, SEFIROT_SYSTEM_INSTRUCTION, compileSefirotSpec } from "./symbolic";
 
 export type VizKind = "array" | "graph" | "tree" | "grid" | "linkedlist" | "concept";
 
@@ -428,21 +429,23 @@ export const CONCEPT_RESPONSE_SCHEMA = {
   required: ["title", "description", "narration", "viz", "tradition", "code", "actors", "steps"],
 } as const;
 
-export function promptFor(mode: Mode): string {
-  return mode === "concept" ? CONCEPT_SYSTEM_INSTRUCTION : SYSTEM_INSTRUCTION;
+export function promptFor(mode: Mode, register: ConceptRegister = "free"): string {
+  if (mode !== "concept") return SYSTEM_INSTRUCTION;
+  return register === "sefirot" ? SEFIROT_SYSTEM_INSTRUCTION : CONCEPT_SYSTEM_INSTRUCTION;
 }
 
-export function schemaFor(mode: Mode): Record<string, unknown> {
-  return (mode === "concept" ? CONCEPT_RESPONSE_SCHEMA : RESPONSE_SCHEMA) as unknown as Record<string, unknown>;
+export function schemaFor(mode: Mode, register: ConceptRegister = "free"): Record<string, unknown> {
+  if (mode !== "concept") return RESPONSE_SCHEMA as unknown as Record<string, unknown>;
+  return (register === "sefirot" ? SEFIROT_RESPONSE_SCHEMA : CONCEPT_RESPONSE_SCHEMA) as unknown as Record<string, unknown>;
 }
 
-export function schemaCastFor(mode: Mode): { type: SchemaType } {
-  return schemaFor(mode) as unknown as { type: SchemaType };
+export function schemaCastFor(mode: Mode, register: ConceptRegister = "free"): { type: SchemaType } {
+  return schemaFor(mode, register) as unknown as { type: SchemaType };
 }
 
-export function schemaHintFor(mode: Mode): string {
+export function schemaHintFor(mode: Mode, register: ConceptRegister = "free"): string {
   return `The JSON you return MUST match this JSON Schema exactly:
-${JSON.stringify(schemaFor(mode), null, 2)}
+${JSON.stringify(schemaFor(mode, register), null, 2)}
 
 Return the JSON object on its own — no prose, no markdown fences.`;
 }
@@ -529,7 +532,17 @@ function parseIdPairs(v: unknown): [string, string][] {
 }
 
 /** Convert the raw Gemini object into our internal (renderer-ready) form. */
-export function normalizeSpec(raw: Record<string, unknown>, topic: string, mode: Mode): GeneratedSpec {
+export function normalizeSpec(
+  raw: Record<string, unknown>,
+  topic: string,
+  mode: Mode,
+  register: ConceptRegister = "free",
+): GeneratedSpec {
+  // A symbolic register replaces free-scene parsing with a deterministic
+  // compile of the model's tree-parse.
+  if (mode === "concept" && register === "sefirot") {
+    return compileSefirotSpec(raw, topic);
+  }
   // The mode is authoritative: a confused model can't cross modes.
   const viz: VizKind =
     mode === "concept"

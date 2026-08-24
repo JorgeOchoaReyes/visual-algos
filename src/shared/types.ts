@@ -35,6 +35,15 @@ export const VIDEO_THEMES: { id: VideoTheme; label: string; hint: string }[] = [
   { id: "slate", label: "Slate", hint: "green + sky on slate" },
 ];
 
+/** Symbolic register for concept mode: free scene, or a fixed symbolic
+ * language whose roles compile to deterministic on-screen encodings. */
+export type ConceptRegister = "free" | "sefirot";
+
+export const REGISTERS: { id: ConceptRegister; label: string; hint: string }[] = [
+  { id: "free", label: "Free scene", hint: "bespoke layout per concept" },
+  { id: "sefirot", label: "Tree of Life", hint: "qabbalistic register · one symbolic language" },
+];
+
 export type VisualizationStatus =
   | "generating" // the model is writing the walkthrough spec
   | "rendering" // manim is producing the MP4 locally
@@ -59,6 +68,8 @@ export interface Visualization {
   tradition: string | null;
   /** Visual theme the video was rendered with (default 8bit). */
   theme: VideoTheme;
+  /** Symbolic register for concept mode (default free). */
+  register: ConceptRegister;
   /** Video aspect: landscape (16:9) or portrait (9:16). */
   orientation: Orientation;
   /** Absolute path to the rendered mp4 on disk (once ready). */
@@ -90,6 +101,8 @@ export interface CreateVisualizationInput {
   mode?: Mode;
   /** Visual theme (default 8bit). */
   theme?: VideoTheme;
+  /** Symbolic register for concept mode (default free). */
+  register?: ConceptRegister;
 }
 
 export interface Settings {

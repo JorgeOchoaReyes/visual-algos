@@ -3,6 +3,7 @@ import { mkdtempSync, renameSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type {
+  ConceptRegister,
   CreateVisualizationInput,
   Mode,
   Orientation,
@@ -44,16 +45,17 @@ function norm(input: CreateVisualizationInput) {
   const orientation: Orientation = input.orientation === "portrait" ? "portrait" : "landscape";
   const mode: Mode = input.mode === "concept" ? "concept" : "algorithm";
   const theme: VideoTheme = THEMES.includes(input.theme as VideoTheme) ? (input.theme as VideoTheme) : "8bit";
+  const register: ConceptRegister = mode === "concept" && input.register === "sefirot" ? "sefirot" : "free";
   // Concept videos show argument lines, not source code — render them plain.
   const language = mode === "concept" ? "text" : (input.language || "python").trim() || "python";
   const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;
-  return { topic, quality, orientation, language, narrate, mode, theme };
+  return { topic, quality, orientation, language, narrate, mode, theme, register };
 }
 
 export async function createVisualization(
   input: CreateVisualizationInput,
 ): Promise<{ id: string }> {
-  const { topic, quality, orientation, language, narrate, mode, theme } = norm(input);
+  const { topic, quality, orientation, language, narrate, mode, theme, register } = norm(input);
   if (topic.length < 3) throw new Error("Please enter a longer topic.");
 
   const now = Date.now();
@@ -68,6 +70,7 @@ export async function createVisualization(
     orientation,
     mode,
     theme,
+    register,
     tradition: null,
     manimCode: null,
     sceneName: null,
@@ -84,7 +87,7 @@ export async function createVisualization(
   upsertVisualization(viz);
   emit(viz);
 
-  void runPipeline(viz.id, topic, quality, orientation, language, narrate, mode, theme);
+  void runPipeline(viz.id, topic, quality, orientation, language, narrate, mode, theme, register);
   return { id: viz.id };
 }
 
@@ -111,6 +114,7 @@ export async function regenerateVisualization(id: string): Promise<{ id: string 
     narrate,
     existing.mode ?? "algorithm",
     existing.theme ?? "8bit",
+    existing.register ?? "free",
   );
   return { id };
 }
@@ -124,6 +128,7 @@ async function runPipeline(
   narrate: boolean,
   mode: Mode,
   theme: VideoTheme,
+  register: ConceptRegister,
 ): Promise<void> {
   try {
     const llm = resolveLlm(getSettings());
@@ -132,11 +137,11 @@ async function runPipeline(
     //    invalid (a hard failure — can't render). Then, if it's valid but the
     //    visualization barely moves, TRY one repair to enrich it — but keep the
     //    valid original if the repair doesn't land, so we always ship a video.
-    let spec = await generateSpec(llm, topic, language, mode);
+    let spec = await generateSpec(llm, topic, language, mode, register);
     let check = validateSpec(spec);
     if (!check.ok) {
       try {
-        const repaired = await repairSpec(llm, topic, language, check.reason || "invalid", mode);
+        const repaired = await repairSpec(llm, topic, language, check.reason || "invalid", mode, register);
         if (validateSpec(repaired).ok) {
           spec = repaired;
           check = { ok: true };
@@ -155,6 +160,7 @@ async function runPipeline(
           language,
           vizChangesEnough(spec).reason || "thin visualization",
           mode,
+          register,
         );
         // Only adopt the enriched spec if it's structurally sound AND actually
         // improves the visualization; otherwise render the original as-is.
@@ -187,7 +193,7 @@ async function runPipeline(
     while (!render.ok && attempt < MAX_REPAIRS) {
       attempt += 1;
       try {
-        const fixed = await repairSpec(llm, topic, language, render.error || "render failed", mode);
+        const fixed = await repairSpec(llm, topic, language, render.error || "render failed", mode, register);
         if (validateSpec(fixed).ok) {
           spec = fixed;
           applySpec(id, spec);

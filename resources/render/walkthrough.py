@@ -590,8 +590,12 @@ class ConceptSurface:
         border.move_to(self._pos(z.get("x", 5), z.get("y", 5))).set_z_index(0)
         g = VGroup(border)
         if z.get("label"):
+            # In the lower quarter of the scene the space above a zone is
+            # usually contested (things sit right above it) while below is
+            # frame edge padding — put the label there.
+            side = DOWN if float(z.get("y", 5)) < 2.5 else UP
             g.add(Text(str(z["label"]), font=TFONT, font_size=15, color=color)
-                  .next_to(border, UP, buff=0.10).set_z_index(1))
+                  .next_to(border, side, buff=0.10).set_z_index(1))
         return g
 
     def _zone_bbox(self, zid):
@@ -751,11 +755,20 @@ class ConceptSurface:
                 d = d / np.linalg.norm(d[:2])
                 t = self._clamp(p + d * 1.9)
                 if zid:
-                    # walk outward until clear of the zone (region-clamped)
-                    for k in range(1, 9):
-                        if not self._point_in_zone(t, zid, margin=0.3):
+                    # Walk outward until clear of the zone. The straight ray
+                    # can be blocked (region edge inside the zone), so rotate
+                    # the direction until some ray escapes.
+                    found = False
+                    for rot in (0, PI / 4, -PI / 4, PI / 2, -PI / 2, 3 * PI / 4, -3 * PI / 4, PI):
+                        ca, sa = np.cos(rot), np.sin(rot)
+                        dr = np.array([d[0] * ca - d[1] * sa, d[0] * sa + d[1] * ca, 0.0])
+                        for k in range(9):
+                            cand = self._clamp(p + dr * (1.9 + k * 0.8))
+                            if not self._point_in_zone(cand, zid, margin=0.3):
+                                t, found = cand, True
+                                break
+                        if found:
                             break
-                        t = self._clamp(p + d * (1.9 + k * 0.8))
                     cx, cy, w, h = self.region
                     zx0, zy0, zx1, zy1 = self._zone_bbox(zid)
                     zone_fills_region = (zx1 - zx0 >= w - 0.9) and (zy1 - zy0 >= h - 0.9)

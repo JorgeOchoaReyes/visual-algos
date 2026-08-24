@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { Mode } from "@shared/types";
+import type { ConceptRegister, Mode } from "@shared/types";
 import {
   MAX_OUTPUT_TOKENS,
   buildRepairPrompt,
@@ -11,28 +11,28 @@ import {
   type GeneratedSpec,
 } from "./manimPrompt";
 
-function model(apiKey: string, modelName: string, mode: Mode) {
+function model(apiKey: string, modelName: string, mode: Mode, register: ConceptRegister) {
   const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: promptFor(mode),
+    systemInstruction: promptFor(mode, register),
     generationConfig: {
       temperature: 0.5,
       responseMimeType: "application/json",
-      responseSchema: schemaCastFor(mode),
+      responseSchema: schemaCastFor(mode, register),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   });
 }
 
-function parse(text: string, topic: string, mode: Mode): GeneratedSpec {
+function parse(text: string, topic: string, mode: Mode, register: ConceptRegister): GeneratedSpec {
   let raw: Record<string, unknown>;
   try {
     raw = JSON.parse(extractJson(text)) as Record<string, unknown>;
   } catch {
     throw new Error("Gemini returned malformed JSON.");
   }
-  return normalizeSpec(raw, topic, mode);
+  return normalizeSpec(raw, topic, mode, register);
 }
 
 /**
@@ -40,8 +40,8 @@ function parse(text: string, topic: string, mode: Mode): GeneratedSpec {
  * model stops early (safety block, or MAX_TOKENS truncation) instead of a bare
  * parse failure.
  */
-async function generate(apiKey: string, modelName: string, prompt: string, mode: Mode): Promise<string> {
-  const res = await model(apiKey, modelName, mode).generateContent(prompt);
+async function generate(apiKey: string, modelName: string, prompt: string, mode: Mode, register: ConceptRegister): Promise<string> {
+  const res = await model(apiKey, modelName, mode, register).generateContent(prompt);
   const reason = res.response.candidates?.[0]?.finishReason;
   if (reason && reason !== "STOP" && reason !== "MAX_TOKENS") {
     throw new Error(`Gemini stopped early (${reason}). Try a different topic or model.`);
@@ -65,12 +65,13 @@ async function generateAndParse(
   prompt: string,
   topic: string,
   mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
   try {
-    return parse(await generate(apiKey, modelName, prompt, mode), topic, mode);
+    return parse(await generate(apiKey, modelName, prompt, mode, register), topic, mode, register);
   } catch (first) {
     try {
-      return parse(await generate(apiKey, modelName, prompt, mode), topic, mode);
+      return parse(await generate(apiKey, modelName, prompt, mode, register), topic, mode, register);
     } catch {
       throw first instanceof Error ? first : new Error("Gemini returned malformed JSON.");
     }
@@ -84,8 +85,9 @@ export async function generateSpec(
   topic: string,
   language: string,
   mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return generateAndParse(apiKey, modelName, buildUserPrompt(topic, language, mode), topic, mode);
+  return generateAndParse(apiKey, modelName, buildUserPrompt(topic, language, mode), topic, mode, register);
 }
 
 /** Ask Gemini to fix an invalid spec. */
@@ -96,6 +98,7 @@ export async function repairSpec(
   language: string,
   error: string,
   mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return generateAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode), topic, mode);
+  return generateAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode), topic, mode, register);
 }

@@ -1,4 +1,4 @@
-import type { AiProvider, Mode, Settings } from "@shared/types";
+import type { AiProvider, ConceptRegister, Mode, Settings } from "@shared/types";
 import * as gemini from "./gemini";
 import * as openrouter from "./openrouter";
 import type { GeneratedSpec } from "./manimPrompt";
@@ -39,8 +39,9 @@ export function generateSpec(
   topic: string,
   language: string,
   mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return client(llm.provider).generateSpec(llm.apiKey, llm.model, topic, language, mode);
+  return client(llm.provider).generateSpec(llm.apiKey, llm.model, topic, language, mode, register);
 }
 
 /** Ask the configured provider to fix an invalid spec. */
@@ -50,6 +51,7 @@ export function repairSpec(
   language: string,
   error: string,
   mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode);
+  return client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode, register);
 }

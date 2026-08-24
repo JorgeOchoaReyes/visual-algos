@@ -7,10 +7,12 @@ import {
   LANGUAGES,
   MODES,
   ORIENTATIONS,
+  REGISTERS,
   VIDEO_THEMES,
   providerLabel,
   type AiProvider,
   type EnvStatus,
+  type ConceptRegister,
   type Mode,
   type Orientation,
   type RenderQuality,
@@ -61,6 +63,7 @@ export function New({
   const [mode, setMode] = useState<Mode>("algorithm");
   const [quality, setQuality] = useState<RenderQuality>("m");
   const [theme, setTheme] = useState<VideoTheme>("8bit");
+  const [register, setRegister] = useState<ConceptRegister>("free");
   const [language, setLanguage] = useState("python");
   const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [narrate, setNarrate] = useState(false);
@@ -84,6 +87,7 @@ export function New({
         orientation,
         mode,
         theme,
+        register,
         narrate: narrate && hasElevenLabs,
       });
       navigate(`/v/${id}`);
@@ -155,6 +159,35 @@ export function New({
             ))}
           </div>
         </div>
+
+        {mode === "concept" && (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-white/80">Symbolic language</label>
+            <div className="grid grid-cols-2 gap-2">
+              {REGISTERS.map((r) => (
+                <button
+                  type="button"
+                  key={r.id}
+                  onClick={() => setRegister(r.id)}
+                  className={`rounded-2xl border px-3 py-2.5 text-left transition ${
+                    register === r.id
+                      ? "border-accent bg-accent/10"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                  }`}
+                >
+                  <div className="text-sm font-medium">{r.label}</div>
+                  <div className="text-xs text-white/45">{r.hint}</div>
+                </button>
+              ))}
+            </div>
+            {register === "sefirot" && (
+              <p className="mt-2 text-xs text-white/45">
+                The concept is parsed into the Tree of Life — same roles, same places, every
+                video. One symbolic language across your library.
+              </p>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="mb-2 block text-sm font-medium text-white/80">Topic</label>
