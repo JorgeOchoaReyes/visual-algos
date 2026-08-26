@@ -22,10 +22,30 @@ import {
   type EnvStatus,
   type Settings,
   type ToolStatus,
+  type UpdateState,
 } from "@shared/types";
 import { Dropdown } from "../components/Dropdown";
 
 const CUSTOM = "__custom__";
+
+function updateLabel(u: UpdateState): string {
+  switch (u.status) {
+    case "checking":
+      return "Checking…";
+    case "downloading":
+      return `Downloading… ${u.percent ?? 0}%`;
+    case "available":
+      return "Update available";
+    case "ready":
+      return "Update ready";
+    case "none":
+      return u.message || "Up to date";
+    case "error":
+      return "Check failed";
+    default:
+      return "";
+  }
+}
 
 function ToolRow({ name, tool }: { name: string; tool: ToolStatus }) {
   return (
@@ -133,11 +153,19 @@ export function SettingsPage({
   const [installing, setInstalling] = useState(false);
   const [log, setLog] = useState("");
   const [version, setVersion] = useState("");
+  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const logRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     window.api.app.version().then(setVersion);
   }, []);
+
+  useEffect(() => window.api.updates.onStatus(setUpdate), []);
+
+  function checkForUpdates() {
+    setUpdate({ status: "checking" });
+    void window.api.updates.check();
+  }
 
   useEffect(() => {
     if (!settings) return;
@@ -231,7 +259,32 @@ export function SettingsPage({
             v{version}
           </span>
         )}
+        <div className="ml-auto flex items-center gap-2.5">
+          <span className="text-xs text-white/45">{updateLabel(update)}</span>
+          {update.status === "ready" ? (
+            <button onClick={() => window.api.updates.install()} className="btn8 !py-1.5 !text-xs">
+              <RefreshCw size={13} /> Restart to update
+            </button>
+          ) : update.status === "available" ? (
+            <button onClick={() => window.api.updates.openDownload()} className="btn8 !py-1.5 !text-xs">
+              <Download size={13} /> Download v{update.version ?? ""}
+            </button>
+          ) : (
+            <button
+              onClick={checkForUpdates}
+              disabled={update.status === "checking" || update.status === "downloading"}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 transition hover:text-white disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={update.status === "checking" ? "animate-spin" : ""} />
+              Check for updates
+            </button>
+          )}
+        </div>
       </div>
+      <p className="mt-2 text-xs text-white/35">
+        Windows &amp; Linux update automatically. macOS builds aren&apos;t notarized, so they can&apos;t
+        self-install — use Download to grab the latest.
+      </p>
 
       {/* AI provider */}
       <section className="mt-8 space-y-4">

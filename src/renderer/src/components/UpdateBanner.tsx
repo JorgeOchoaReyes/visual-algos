@@ -8,7 +8,8 @@ export function UpdateBanner() {
 
   useEffect(() => window.api.updates.onStatus(setState), []);
 
-  const show = state.status === "downloading" || state.status === "ready";
+  const show =
+    state.status === "downloading" || state.status === "ready" || state.status === "available";
 
   return (
     <AnimatePresence>
@@ -26,6 +27,18 @@ export function UpdateBanner() {
                 <span className="text-sm text-white/80">
                   Downloading update… {state.percent ?? 0}%
                 </span>
+              </>
+            ) : state.status === "available" ? (
+              <>
+                <span className="text-sm text-white/80">
+                  Update {state.version ? `v${state.version} ` : ""}available
+                </span>
+                <button
+                  onClick={() => window.api.updates.openDownload()}
+                  className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-sm font-medium text-white hover:bg-accent/90"
+                >
+                  <Download size={14} /> Download
+                </button>
               </>
             ) : (
               <>
