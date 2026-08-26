@@ -1,11 +1,12 @@
+import type { ConceptRegister, Mode } from "@shared/types";
 import {
   MAX_OUTPUT_TOKENS,
-  SCHEMA_HINT,
-  SYSTEM_INSTRUCTION,
   buildRepairPrompt,
   buildUserPrompt,
   extractJson,
   normalizeSpec,
+  promptFor,
+  schemaHintFor,
   type GeneratedSpec,
 } from "./manimPrompt";
 
@@ -43,6 +44,8 @@ async function chat(
   apiKey: string,
   modelName: string,
   userPrompt: string,
+  mode: Mode,
+  register: ConceptRegister,
   jsonMode = true,
 ): Promise<string> {
   const res = await fetch(API_URL, {
@@ -58,7 +61,7 @@ async function chat(
       temperature: 0.5,
       max_tokens: MAX_OUTPUT_TOKENS,
       messages: [
-        { role: "system", content: `${SYSTEM_INSTRUCTION}\n\n${SCHEMA_HINT}` },
+        { role: "system", content: `${promptFor(mode, register)}\n\n${schemaHintFor(mode, register)}` },
         { role: "user", content: userPrompt },
       ],
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
@@ -71,7 +74,7 @@ async function chat(
     // Not every model accepts response_format; retry once without it before
     // giving up, since the prompt already asks for JSON.
     if (jsonMode && res.status === 400 && /response_format|json/i.test(text)) {
-      return chat(apiKey, modelName, userPrompt, false);
+      return chat(apiKey, modelName, userPrompt, mode, register, false);
     }
     throw new Error(`OpenRouter error ${res.status}: ${errorMessage(text) || res.statusText}`);
   }
@@ -99,14 +102,14 @@ async function chat(
   return content;
 }
 
-function parse(text: string, topic: string): GeneratedSpec {
+function parse(text: string, topic: string, mode: Mode, register: ConceptRegister): GeneratedSpec {
   let raw: Record<string, unknown>;
   try {
     raw = JSON.parse(extractJson(text)) as Record<string, unknown>;
   } catch {
     throw new Error("The model returned malformed JSON.");
   }
-  return normalizeSpec(raw, topic);
+  return normalizeSpec(raw, topic, mode, register);
 }
 
 /** Generate + parse, retrying once on a malformed/empty response. */
@@ -115,26 +118,30 @@ async function chatAndParse(
   modelName: string,
   prompt: string,
   topic: string,
+  mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
   try {
-    return parse(await chat(apiKey, modelName, prompt), topic);
+    return parse(await chat(apiKey, modelName, prompt, mode, register), topic, mode, register);
   } catch (first) {
     try {
-      return parse(await chat(apiKey, modelName, prompt), topic);
+      return parse(await chat(apiKey, modelName, prompt, mode, register), topic, mode, register);
     } catch {
       throw first instanceof Error ? first : new Error("The model returned malformed JSON.");
     }
   }
 }
 
-/** Ask an OpenRouter model for a structured algorithm-walkthrough spec. */
+/** Ask an OpenRouter model for a structured walkthrough/concept spec. */
 export async function generateSpec(
   apiKey: string,
   modelName: string,
   topic: string,
   language: string,
+  mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return chatAndParse(apiKey, modelName, buildUserPrompt(topic, language), topic);
+  return chatAndParse(apiKey, modelName, buildUserPrompt(topic, language, mode), topic, mode, register);
 }
 
 /** Ask an OpenRouter model to fix an invalid spec. */
@@ -144,6 +151,8 @@ export async function repairSpec(
   topic: string,
   language: string,
   error: string,
+  mode: Mode,
+  register: ConceptRegister,
 ): Promise<GeneratedSpec> {
-  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error), topic);
+  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode), topic, mode, register);
 }

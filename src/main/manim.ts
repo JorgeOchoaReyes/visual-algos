@@ -114,6 +114,10 @@ export async function renderSpec(params: {
       nodes: spec.nodes ?? [],
       edges: spec.edges ?? [],
       grid: spec.grid ?? [],
+      tradition: spec.tradition ?? null,
+      actors: spec.actors ?? [],
+      zones: spec.zones ?? [],
+      links: spec.links ?? [],
       steps: spec.steps,
     };
     writeFileSync(join(workdir, "spec.json"), JSON.stringify(specJson), "utf-8");

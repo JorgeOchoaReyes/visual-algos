@@ -17,6 +17,33 @@ export const ORIENTATIONS: { id: Orientation; label: string; hint: string }[] = 
   { id: "portrait", label: "Portrait", hint: "9:16 · Shorts/TikTok" },
 ];
 
+/** What kind of video: a CS algorithm walkthrough, or an abstract concept. */
+export type Mode = "algorithm" | "concept";
+
+export const MODES: { id: Mode; label: string; hint: string; badge?: string }[] = [
+  { id: "algorithm", label: "Algorithm", hint: "code + data structure" },
+  { id: "concept", label: "Concept", hint: "social theory · abstract ideas", badge: "New!" },
+];
+
+/** Visual theme for rendered videos (palettes live in walkthrough.py). */
+export type VideoTheme = "8bit" | "ink" | "slate" | "manuscript";
+
+export const VIDEO_THEMES: { id: VideoTheme; label: string; hint: string }[] = [
+  { id: "8bit", label: "Arcade", hint: "pixel · neon on navy" },
+  { id: "manuscript", label: "Manuscript", hint: "serif · gold on black" },
+  { id: "ink", label: "Ink", hint: "soft blue on charcoal" },
+  { id: "slate", label: "Slate", hint: "green + sky on slate" },
+];
+
+/** Symbolic register for concept mode: free scene, or a fixed symbolic
+ * language whose roles compile to deterministic on-screen encodings. */
+export type ConceptRegister = "free" | "glyphs";
+
+export const REGISTERS: { id: ConceptRegister; label: string; hint: string }[] = [
+  { id: "free", label: "Free scene", hint: "bespoke layout per concept" },
+  { id: "glyphs", label: "Glyphs", hint: "fixed motif lexicon · life, death, war, flow…" },
+];
+
 export type VisualizationStatus =
   | "generating" // the model is writing the walkthrough spec
   | "rendering" // manim is producing the MP4 locally
@@ -35,6 +62,14 @@ export interface Visualization {
   sceneName: string | null;
   /** Programming language of the generated code. */
   language: string;
+  /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
+  mode: Mode;
+  /** Whose account a concept video animates (e.g. "Marx, Capital Vol. I"). */
+  tradition: string | null;
+  /** Visual theme the video was rendered with (default 8bit). */
+  theme: VideoTheme;
+  /** Symbolic register for concept mode (default free). */
+  register: ConceptRegister;
   /** Video aspect: landscape (16:9) or portrait (9:16). */
   orientation: Orientation;
   /** Absolute path to the rendered mp4 on disk (once ready). */
@@ -62,6 +97,12 @@ export interface CreateVisualizationInput {
   language?: string;
   /** Video aspect (default landscape). */
   orientation?: Orientation;
+  /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
+  mode?: Mode;
+  /** Visual theme (default 8bit). */
+  theme?: VideoTheme;
+  /** Symbolic register for concept mode (default free). */
+  register?: ConceptRegister;
 }
 
 export interface Settings {
@@ -252,6 +293,7 @@ export const IPC = {
   updateInstall: "update:install",
   setupStatus: "setup:status", // main -> renderer broadcast
   setupRetry: "setup:retry",
+  voiceSample: "voice:sample",
 } as const;
 
 export type SetupState =

@@ -111,6 +111,9 @@ export function Detail() {
             {viz.title || viz.topic}
             {viz.hasAudio && <Volume2 size={16} className="text-accent" />}
           </h1>
+          {viz.tradition && (
+            <p className="mt-0.5 text-sm italic text-white/45">{viz.tradition}</p>
+          )}
           <p className="mt-1 text-sm text-white/50">{viz.topic}</p>
         </div>
         <StatusBadge status={viz.status} />
@@ -194,8 +197,21 @@ export function Detail() {
 
       {viz.manimCode && isTerminal(viz.status) && (
         <div className="mt-8">
-          <h2 className="mb-3 text-sm font-medium text-white/70">Generated Manim scene</h2>
-          <CodeBlock code={viz.manimCode} />
+          {(viz.mode ?? "algorithm") === "concept" ? (
+            <>
+              <h2 className="mb-3 text-sm font-medium text-white/70">The argument</h2>
+              <ol className="list-inside list-decimal space-y-1.5 rounded-xl border border-white/[0.07] bg-panel/50 p-4 text-sm leading-relaxed text-white/70">
+                {viz.manimCode.split("\n").map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ol>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-3 text-sm font-medium text-white/70">Generated Manim scene</h2>
+              <CodeBlock code={viz.manimCode} />
+            </>
+          )}
         </div>
       )}
     </div>
