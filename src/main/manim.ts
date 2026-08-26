@@ -106,6 +106,7 @@ export async function renderSpec(params: {
       language,
       orientation,
       theme,
+      mode: spec.mode ?? "code",
       viz: spec.viz ?? "array",
       code: spec.code,
       array: spec.array,

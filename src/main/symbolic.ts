@@ -317,6 +317,7 @@ export function compileGlyphSpec(raw: Record<string, unknown>, topic: string): G
     title: (str(raw.title) || topic).slice(0, 120),
     description: str(raw.description).slice(0, 600),
     narration: narration.slice(0, 2000),
+    mode: "concept",
     viz: "concept",
     code,
     array: [],

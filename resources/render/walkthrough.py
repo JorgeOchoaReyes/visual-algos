@@ -69,6 +69,11 @@ THEMES = {
 SPEC = json.load(open("spec.json", "r", encoding="utf-8"))
 TH = THEMES.get(SPEC.get("theme", "8bit"), THEMES["8bit"])
 VIZ = SPEC.get("viz", "array")
+# How the left panel is presented:
+#   "code"    – syntax-highlighted source (algorithms)
+#   "concept" – plain text bullet points (concepts, philosophy, history, math)
+#   "visual"  – no panel; the visualization fills the frame
+MODE = SPEC.get("mode", "code")
 PORTRAIT = SPEC.get("orientation") == "portrait"
 SHOW_CAPTIONS = bool(SPEC.get("captions", False))
 INTRO_SECONDS = 2.2  # must match narration.ts
@@ -291,11 +296,15 @@ class GraphSurface:
             self.ncirc[nid] = c
             ngrp.add(c, t)
 
+        # Only show the queue row if some step actually uses a queue (BFS/DFS);
+        # concept maps and plain graphs don't need it.
+        self.use_queue = any("queue" in s for s in SPEC.get("steps", []))
         self.queue_row = VGroup(Text("queue:", font=FONT, font_size=17, color=th["dim"])).to_corner(DR, buff=0.45)
         scene.play(Create(egrp), run_time=0.5)
         scene.play(LaggedStart(*[GrowFromCenter(self.ncirc[n]) for n in self.nodes], lag_ratio=0.05, run_time=0.6),
                    *[FadeIn(ngrp[i]) for i in range(1, len(ngrp), 2)])
-        scene.add(self.queue_row)
+        if self.use_queue:
+            scene.add(self.queue_row)
 
     def _build_queue(self, items):
         g = VGroup(Text("queue:", font=FONT, font_size=17, color=self.th["dim"]))
@@ -960,13 +969,9 @@ def _ptr(name, color, up=False):
 
 # ------------------------------------------------------------------- scene ----
 class Walkthrough(Scene):
-    def construct(self):
-        th = TH
+    def build_code_panel(self, th, panel_w, fs):
+        """Syntax-highlighted source on a true monospace grid."""
         lines = SPEC.get("code", [])[:22]
-        steps = SPEC.get("steps", [])[:60]
-        fs = 18 if not PORTRAIT else 22
-        stroke = 4 if th["pixel"] else 3
-
         one = Text("M", font=FONT, font_size=fs); two = Text("MM", font=FONT, font_size=fs)
         cw = two.width - one.width; chh = one.height; line_h = chh + 0.24
         try:
@@ -982,7 +987,7 @@ class Walkthrough(Scene):
                     out.append((ch, color))
             return out
 
-        code_lines = VGroup()
+        rows = VGroup()
         for row, src in enumerate(lines):
             lg = VGroup()
             for col, (ch, color) in enumerate(line_chars(src)):
@@ -991,12 +996,34 @@ class Walkthrough(Scene):
                 lg.add(Text(ch, font=FONT, font_size=fs, color=color).move_to([col * cw + cw / 2, -row * line_h, 0]))
             if len(lg) == 0:
                 lg.add(Rectangle(width=cw, height=chh, stroke_width=0, fill_opacity=0).move_to([cw / 2, -row * line_h, 0]))
-            code_lines.add(lg)
+            rows.add(lg)
+        return rows, chh
 
-        panel = RoundedRectangle(corner_radius=0.0 if th["pixel"] else 0.12, width=code_lines.width + 0.8,
-                                 height=code_lines.height + 0.6, fill_color=th["panel"], fill_opacity=1,
-                                 stroke_color=th["accent"] if th["pixel"] else th["edge"], stroke_width=stroke).move_to(code_lines)
-        code = VGroup(panel, code_lines)
+    def build_concept_panel(self, th, panel_w, fs):
+        """Plain bullet points (one Text per point), for non-code topics."""
+        lines = SPEC.get("code", [])[:14]
+        fs2 = fs + 3
+        one = Text("M", font=FONT, font_size=fs2)
+        chh = one.height
+        line_h = chh + 0.55
+        max_w = panel_w - 0.7
+        rows = VGroup()
+        for row, src in enumerate(lines):
+            txt = Text(f"•  {src}", font=FONT, font_size=fs2, color=th["text"])
+            if txt.width > max_w:
+                txt.scale_to_fit_width(max_w)
+            txt.move_to([txt.width / 2, -row * line_h, 0])
+            rows.add(VGroup(txt))
+        return rows, chh
+
+    def construct(self):
+        th = TH
+        steps = SPEC.get("steps", [])[:60]
+        fs = 18 if not PORTRAIT else 22
+        stroke = 4 if th["pixel"] else 3
+        has_panel = MODE in ("code", "concept") and len(SPEC.get("code", [])) > 0
+        has_viz = VIZ != "none"
+
         title = Text(SPEC.get("title", "Algorithm"), font=TFONT, weight=BOLD,
                      font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.35)
         # Whose account this animates (concept mode) — shown under the title.
@@ -1005,18 +1032,37 @@ class Walkthrough(Scene):
             tradition = Text(str(SPEC["tradition"]), font=TFONT, font_size=16,
                              color=th["dim"]).next_to(title, DOWN, buff=0.12)
 
-        if PORTRAIT:
-            region_w, region_h = config.frame_width - 0.8, config.frame_height * 0.42
-        else:
-            region_w, region_h = config.frame_width * 0.48, config.frame_height - 2.2
-        if tradition is not None:
-            region_h -= 0.5
-        code.scale(min(region_w / code.width, region_h / code.height, 1.0))
-        code_scale = code[0].height / (code_lines.height + 0.6)
-        if PORTRAIT:
-            code.next_to(tradition if tradition is not None else title, DOWN, buff=0.5)
-        else:
-            code.to_edge(LEFT, buff=0.45).set_y(-0.2 if tradition is None else -0.35)
+        # ---- build the left panel (code or concept), if any ----
+        code_lines = VGroup()
+        panel = None
+        code_scale = 1.0
+        chh = 0.3
+        if has_panel:
+            # panel target width depends on whether a viz shares the frame
+            panel_target_w = (config.frame_width * 0.46) if has_viz else (config.frame_width * 0.8)
+            if MODE == "concept":
+                code_lines, chh = self.build_concept_panel(th, panel_target_w, fs)
+            else:
+                code_lines, chh = self.build_code_panel(th, panel_target_w, fs)
+            panel = RoundedRectangle(
+                corner_radius=0.0 if th["pixel"] else 0.12, width=code_lines.width + 0.8,
+                height=code_lines.height + 0.6, fill_color=th["panel"], fill_opacity=1,
+                stroke_color=th["accent"] if th["pixel"] else th["edge"], stroke_width=stroke).move_to(code_lines)
+            code = VGroup(panel, code_lines)
+            if PORTRAIT:
+                region_w, region_h = config.frame_width - 0.8, config.frame_height * (0.40 if has_viz else 0.72)
+            else:
+                region_w, region_h = panel_target_w, config.frame_height - 2.2
+            if tradition is not None:
+                region_h -= 0.5
+            code.scale(min(region_w / code.width, region_h / code.height, 1.0))
+            code_scale = panel.height / (code_lines.height + 0.6)
+            if PORTRAIT:
+                code.next_to(tradition if tradition is not None else title, DOWN, buff=0.5)
+            elif has_viz:
+                code.to_edge(LEFT, buff=0.45).set_y(-0.2 if tradition is None else -0.35)
+            else:
+                code.move_to([0, -0.2, 0])  # centered when it's the only element
 
         def hl_for(i):
             ln = code_lines[i]
@@ -1024,39 +1070,53 @@ class Walkthrough(Scene):
                              stroke_width=0, fill_color=th["accent"], fill_opacity=0.22
                              ).move_to([panel.get_center()[0], ln.get_center()[1], 0])
 
-        # pick the drawing surface
-        if PORTRAIT:
-            arr_region = (0.5, config.frame_width - 0.5, code.get_bottom()[1] - 2.9)
-            gg_region = (0.0, code.get_bottom()[1] - 2.4, config.frame_width - 1.0, 4.0)
-            list_region = (0.5, config.frame_width - 0.5, code.get_bottom()[1] - 2.2)
-        else:
-            arr_region = (0.4, config.frame_width * 0.5 - 0.35, -1.55)
-            gg_region = (config.frame_width * 0.25 + 0.05, 0.35, config.frame_width * 0.40, 4.4)
-            # leave room on the right for the trailing "-> None" terminator
-            list_region = (0.4, config.frame_width * 0.5 - 1.2, 0.2)
+        # ---- pick the drawing surface (region depends on whether a panel shares the frame) ----
+        surface = None
+        if has_viz:
+            if PORTRAIT:
+                below = (code.get_bottom()[1] if has_panel else config.frame_height / 2 - 1.6)
+                arr_region = (0.5, config.frame_width - 0.5, below - (2.9 if has_panel else 0.5))
+                gg_region = (0.0, below - (2.4 if has_panel else 0.2), config.frame_width - 1.0, 4.4)
+                list_region = (0.5, config.frame_width - 0.5, below - (2.2 if has_panel else 0.4))
+            elif has_panel:
+                # right half of the frame (centered coords: 0 = frame center)
+                arr_region = (0.4, config.frame_width * 0.5 - 0.35, -1.55)
+                gg_region = (config.frame_width * 0.25 + 0.05, 0.35, config.frame_width * 0.40, 4.4)
+                list_region = (0.4, config.frame_width * 0.5 - 1.2, 0.2)
+            else:  # viz fills the whole frame
+                arr_region = (-config.frame_width / 2 + 0.6, config.frame_width / 2 - 0.6, -1.4)
+                gg_region = (0.0, -0.2, config.frame_width - 2.0, 5.0)
+                list_region = (-config.frame_width / 2 + 0.6, config.frame_width / 2 - 0.6, 0.0)
+            if VIZ in ("graph", "tree"):
+                surface = GraphSurface(th, gg_region)
+            elif VIZ == "grid":
+                surface = GridSurface(th, gg_region)
+            elif VIZ == "linkedlist":
+                surface = ListSurface(th, list_region)
+            elif VIZ == "concept":
+                surface = ConceptSurface(th, gg_region)
+            else:
+                surface = ArraySurface(th, arr_region)
 
-        if VIZ == "graph" or VIZ == "tree":
-            surface = GraphSurface(th, gg_region)
-        elif VIZ == "grid":
-            surface = GridSurface(th, gg_region)
-        elif VIZ == "linkedlist":
-            surface = ListSurface(th, list_region)
-        elif VIZ == "concept":
-            surface = ConceptSurface(th, gg_region)
-        else:
-            surface = ArraySurface(th, arr_region)
-
-        # intro (~INTRO_SECONDS)
+        # ---- intro (~INTRO_SECONDS) ----
         self.play(FadeIn(title, shift=DOWN * 0.2),
                   *([FadeIn(tradition, shift=DOWN * 0.2)] if tradition is not None else []),
                   run_time=0.5)
-        self.add(panel)
-        self.play(LaggedStart(*[FadeIn(l) for l in code_lines], lag_ratio=0.04, run_time=0.8))
-        surface.build(self)
+        if has_panel:
+            self.add(panel)
+            self.play(LaggedStart(*[FadeIn(l) for l in code_lines], lag_ratio=0.04, run_time=0.8))
+        else:
+            self.wait(0.8)
+        if surface is not None:
+            surface.build(self)
+        else:
+            self.wait(0.6)
 
-        highlight = hl_for(0).set_opacity(0)
-        self.add(highlight)
-        self.play(highlight.animate.become(hl_for(0)), run_time=0.25)
+        highlight = None
+        if has_panel:
+            highlight = hl_for(0).set_opacity(0)
+            self.add(highlight)
+            self.play(highlight.animate.become(hl_for(0)), run_time=0.25)
         self.wait(0.05)
 
         cap_w = config.frame_width - 1.2
@@ -1071,17 +1131,24 @@ class Walkthrough(Scene):
 
         for step in steps:
             dur = step_dur(step)
-            li = max(0, min(int(step.get("line", 1)) - 1, len(code_lines) - 1))
-            anims = [highlight.animate.become(hl_for(li))]
-            anims += surface.apply(step)
-            if SHOW_CAPTIONS:
+            anims = []
+            if has_panel and len(code_lines) > 0:
+                li = max(0, min(int(step.get("line", 1)) - 1, len(code_lines) - 1))
+                anims.append(highlight.animate.become(hl_for(li)))
+            if surface is not None:
+                anims += surface.apply(step)
+            if SHOW_CAPTIONS or (not has_panel and not has_viz):
                 new_cap = make_caption(step.get("say") or step.get("caption") or "")
                 self.remove(caption)
                 anims.append(FadeIn(new_cap))
                 caption = new_cap
             change_rt = min(0.55, max(0.2, dur * 0.4))
-            self.play(*anims, run_time=change_rt)
-            used = surface.extra(self, step, dur, change_rt)
+            if anims:
+                self.play(*anims, run_time=change_rt)
+                used = surface.extra(self, step, dur, change_rt) if surface is not None else change_rt
+            else:
+                self.wait(change_rt)
+                used = change_rt
             self.wait(max(0.15, dur - used))
 
         self.wait(1.0)
