@@ -68,7 +68,9 @@ const api = {
       ipcRenderer.on(IPC.updateStatus, handler);
       return () => ipcRenderer.removeListener(IPC.updateStatus, handler);
     },
+    check: (): Promise<void> => ipcRenderer.invoke(IPC.updateCheck),
     install: (): Promise<void> => ipcRenderer.invoke(IPC.updateInstall),
+    openDownload: (): Promise<void> => ipcRenderer.invoke(IPC.updateOpenDownload),
   },
 };
 

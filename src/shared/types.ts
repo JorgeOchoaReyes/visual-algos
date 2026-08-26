@@ -291,6 +291,8 @@ export const IPC = {
   videoReveal: "video:reveal",
   updateStatus: "update:status", // main -> renderer broadcast
   updateInstall: "update:install",
+  updateCheck: "update:check", // renderer -> main: check for updates on demand
+  updateOpenDownload: "update:openDownload", // open the Releases page in the browser
   setupStatus: "setup:status", // main -> renderer broadcast
   setupRetry: "setup:retry",
   voiceSample: "voice:sample",
@@ -303,11 +305,12 @@ export type SetupState =
   | { phase: "error"; message?: string };
 
 export type UpdateState =
+  | { status: "idle" }
   | { status: "checking" }
   | { status: "available"; version?: string }
   | { status: "downloading"; percent?: number }
   | { status: "ready"; version?: string }
-  | { status: "none" }
+  | { status: "none"; message?: string } // up to date (or not applicable in dev)
   | { status: "error"; message?: string };
 
 export const MEDIA_PROTOCOL = "vizmedia";
