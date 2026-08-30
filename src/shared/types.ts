@@ -83,6 +83,10 @@ export interface Visualization {
   orientation: Orientation;
   /** Target length / pacing (short ~15–20s, standard ~1min, deep ~2–4min). */
   length: VideoLength;
+  /** Per-video model override for spec generation (else the Settings default). */
+  model: string | null;
+  /** Per-video ElevenLabs voice override (else the Settings default). */
+  voiceId: string | null;
   /** Absolute path to the rendered mp4 on disk (once ready). */
   videoPath: string | null;
   durationSeconds: number | null;
@@ -110,6 +114,10 @@ export interface CreateVisualizationInput {
   orientation?: Orientation;
   /** Target length / pacing (default standard; portrait defaults to short). */
   length?: VideoLength;
+  /** Override the spec-generation model for this video (else Settings default). */
+  model?: string;
+  /** Override the ElevenLabs narration voice for this video (else Settings default). */
+  voiceId?: string;
   /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
   mode?: Mode;
   /** Visual theme (default 8bit). */

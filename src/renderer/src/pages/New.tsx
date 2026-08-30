@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Clock, Code2, Gauge, MonitorSmartphone, Palette, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
+import { BookOpen, Clock, Code2, Cpu, Gauge, Loader2, MonitorSmartphone, Palette, Play, Sparkles, Square, Volume2, Wand2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
   formatUsd,
+  ELEVENLABS_VOICES,
+  GEMINI_MODELS,
   LANGUAGES,
   MODES,
+  OPENROUTER_MODELS,
   ORIENTATIONS,
   REGISTERS,
   VIDEO_LENGTHS,
@@ -28,6 +31,10 @@ const QUALITIES: { value: RenderQuality; label: string; hint: string }[] = [
   { value: "m", label: "Balanced", hint: "720p" },
   { value: "h", label: "High", hint: "1080p · slower" },
 ];
+
+// Sentinels for the per-video model / voice pickers.
+const DEFAULT_OPT = "__default__";
+const CUSTOM_OPT = "__custom__";
 
 const EXAMPLES = [
   "Binary search on a sorted array",
@@ -52,6 +59,7 @@ export function New({
   hasElevenLabs,
   provider,
   model,
+  defaultVoiceId,
 }: {
   canGenerate: boolean;
   hasKey: boolean;
@@ -59,6 +67,7 @@ export function New({
   hasElevenLabs: boolean;
   provider: AiProvider;
   model: string;
+  defaultVoiceId: string;
 }) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState("");
@@ -77,8 +86,76 @@ export function New({
     setOrientation(o);
     setLength(o === "portrait" ? "short" : "standard");
   }
+
+  // Per-video model + voice overrides. DEFAULT_OPT = use the Settings default.
+  const [modelSel, setModelSel] = useState(DEFAULT_OPT);
+  const [customModel, setCustomModel] = useState("");
+  const [voiceSel, setVoiceSel] = useState(DEFAULT_OPT);
+  const [customVoice, setCustomVoice] = useState("");
+  const [sampleState, setSampleState] = useState<"idle" | "loading" | "playing">("idle");
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve each picker to the value sent to the pipeline ("" = Settings default).
+  const chosenModel =
+    modelSel === DEFAULT_OPT ? "" : modelSel === CUSTOM_OPT ? customModel.trim() : modelSel;
+  const chosenVoice =
+    voiceSel === DEFAULT_OPT ? "" : voiceSel === CUSTOM_OPT ? customVoice.trim() : voiceSel;
+  const previewVoiceId = (chosenVoice || defaultVoiceId).trim();
+
+  const providerModels = provider === "openrouter" ? OPENROUTER_MODELS : GEMINI_MODELS;
+  const modelOptions = [
+    { value: DEFAULT_OPT, label: "Default", note: model || "Settings model" },
+    ...providerModels.map((m) => ({ value: m.id, label: m.label, note: m.note })),
+    { value: CUSTOM_OPT, label: "Custom…", note: "enter any model id" },
+  ];
+  const defaultVoiceLabel =
+    ELEVENLABS_VOICES.find((v) => v.id === defaultVoiceId)?.label ?? "your Settings voice";
+  const voiceOptions = [
+    { value: DEFAULT_OPT, label: "Default", note: defaultVoiceLabel },
+    ...ELEVENLABS_VOICES.map((v) => ({ value: v.id, label: v.label })),
+    { value: CUSTOM_OPT, label: "Custom…", note: "enter a voice id" },
+  ];
+
+  function stopSample() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setSampleState("idle");
+  }
+  useEffect(() => stopSample, []);
+  useEffect(() => {
+    stopSample();
+    setSampleError(null);
+  }, [previewVoiceId]);
+
+  async function playSample() {
+    if (sampleState === "playing") return stopSample();
+    setSampleError(null);
+    setSampleState("loading");
+    try {
+      const res = await window.api.voices.sample(previewVoiceId);
+      if (!res.ok || !res.dataUrl) {
+        setSampleError(res.error || "Could not load the voice sample.");
+        setSampleState("idle");
+        return;
+      }
+      const audio = new Audio(res.dataUrl);
+      audioRef.current = audio;
+      audio.onended = () => setSampleState("idle");
+      audio.onerror = () => {
+        setSampleError("Playback failed.");
+        setSampleState("idle");
+      };
+      await audio.play();
+      setSampleState("playing");
+    } catch (err) {
+      setSampleError(err instanceof Error ? err.message : "Could not play the sample.");
+      setSampleState("idle");
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -100,6 +177,8 @@ export function New({
         theme,
         register,
         narrate: narrate && hasElevenLabs,
+        ...(chosenModel ? { model: chosenModel } : {}),
+        ...(chosenVoice ? { voiceId: chosenVoice } : {}),
       });
       navigate(`/v/${id}`);
     } catch (err) {
@@ -275,6 +354,34 @@ export function New({
           </div>
         </div>
 
+        <div>
+          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+            <Cpu size={15} /> Model
+            <span className="font-normal text-white/40">· {providerLabel(provider)}</span>
+          </label>
+          <Dropdown
+            value={modelSel}
+            options={modelOptions}
+            onChange={(v) => {
+              setModelSel(v);
+              if (v !== CUSTOM_OPT) setCustomModel("");
+            }}
+          />
+          {modelSel === CUSTOM_OPT && (
+            <input
+              type="text"
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+              placeholder={provider === "openrouter" ? "e.g. anthropic/claude-sonnet-4" : "e.g. gemini-2.5-pro"}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent"
+            />
+          )}
+          <p className="mt-1.5 text-xs text-white/40">
+            Just for this video — the default comes from Settings. Stronger models write better
+            specs; faster ones cost less.
+          </p>
+        </div>
+
         <div className={mode === "concept" ? "" : "grid grid-cols-2 gap-4"}>
           {mode !== "concept" && (
             <div>
@@ -364,6 +471,51 @@ export function New({
           />
         </div>
 
+        {narrate && hasElevenLabs && (
+          <div>
+            <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+              <Volume2 size={15} /> Voice
+            </label>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <Dropdown
+                  value={voiceSel}
+                  options={voiceOptions}
+                  onChange={(v) => {
+                    setVoiceSel(v);
+                    if (v !== CUSTOM_OPT) setCustomVoice("");
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={playSample}
+                disabled={!previewVoiceId || sampleState === "loading"}
+                title="Play a sample of this voice"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-white/70 transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {sampleState === "loading" ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : sampleState === "playing" ? (
+                  <Square size={13} />
+                ) : (
+                  <Play size={15} />
+                )}
+              </button>
+            </div>
+            {voiceSel === CUSTOM_OPT && (
+              <input
+                type="text"
+                value={customVoice}
+                onChange={(e) => setCustomVoice(e.target.value)}
+                placeholder="ElevenLabs voice id"
+                className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent"
+              />
+            )}
+            {sampleError && <p className="mt-1.5 text-xs text-red-300">{sampleError}</p>}
+          </div>
+        )}
+
         {error && (
           <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
             {error}
@@ -371,7 +523,7 @@ export function New({
         )}
 
         {(() => {
-          const est = estimateVideoCost(provider, model, narrate && hasElevenLabs);
+          const est = estimateVideoCost(provider, chosenModel || model, narrate && hasElevenLabs);
           return (
             <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-xs text-white/50">
               <span>Estimated API cost</span>

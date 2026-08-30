@@ -15,16 +15,17 @@ export interface LlmConfig {
  * Pick the configured provider and make sure it's usable. Throws a message the
  * UI can show verbatim when a key or model is missing.
  */
-export function resolveLlm(settings: Settings): LlmConfig {
+export function resolveLlm(settings: Settings, modelOverride?: string): LlmConfig {
+  const override = (modelOverride || "").trim();
   if (settings.provider === "openrouter") {
     const apiKey = settings.openRouterApiKey.trim();
-    const model = settings.openRouterModel.trim();
+    const model = override || settings.openRouterModel.trim();
     if (!apiKey) throw new Error("No OpenRouter API key set. Add one in Settings.");
     if (!model) throw new Error("No OpenRouter model set. Pick one in Settings.");
     return { provider: "openrouter", apiKey, model };
   }
   const apiKey = settings.geminiApiKey.trim();
-  const model = settings.geminiModel.trim();
+  const model = override || settings.geminiModel.trim();
   if (!apiKey) throw new Error("No Gemini API key set. Add one in Settings.");
   if (!model) throw new Error("No Gemini model set. Pick one in Settings.");
   return { provider: "gemini", apiKey, model };

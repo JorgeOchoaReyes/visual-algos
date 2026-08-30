@@ -50,6 +50,7 @@ export default function App() {
                     hasElevenLabs={!!settings?.elevenLabsApiKey}
                     provider={settings?.provider ?? "gemini"}
                     model={settings ? activeModel(settings) : "gemini-2.5-flash"}
+                    defaultVoiceId={settings?.elevenLabsVoiceId ?? ""}
                   />
                 </Page>
               }

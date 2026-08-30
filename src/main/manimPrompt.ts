@@ -507,7 +507,7 @@ Return the JSON object on its own — no prose, no markdown fences.`;
  * large; without a high ceiling the JSON gets truncated mid-object and fails to
  * parse. Both providers give it the same room.
  */
-export const MAX_OUTPUT_TOKENS = 16384;
+export const MAX_OUTPUT_TOKENS = 32768;
 
 /** Pull a JSON object out of a model response, tolerating fences / stray prose. */
 export function extractJson(text: string): string {
