@@ -3,6 +3,7 @@ import {
   Check,
   Cpu,
   Download,
+  FileText,
   KeyRound,
   Loader2,
   MonitorCog,
@@ -486,12 +487,21 @@ export function SettingsPage({
       <section className="mt-10 space-y-3">
         <div className="flex items-center justify-between">
           <SectionTitle icon={MonitorCog}>Render environment</SectionTitle>
-          <button
-            onClick={onRecheckEnv}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
-          >
-            <RefreshCw size={12} /> Re-check
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.api.app.openLogs()}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
+              title="Open the app log file — useful when a video fails to generate"
+            >
+              <FileText size={12} /> Open logs
+            </button>
+            <button
+              onClick={onRecheckEnv}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
+            >
+              <RefreshCw size={12} /> Re-check
+            </button>
+          </div>
         </div>
         <p className="-mt-1 text-xs text-white/45">
           The installed app ships its own Python + Manim + ffmpeg, so this should be green with no

@@ -1025,7 +1025,7 @@ class Walkthrough(Scene):
         has_viz = VIZ != "none"
 
         title = Text(SPEC.get("title", "Algorithm"), font=TFONT, weight=BOLD,
-                     font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.35)
+                     font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.7 if not PORTRAIT else 1.1)
         # Whose account this animates (concept mode) — shown under the title.
         tradition = None
         if SPEC.get("tradition"):
@@ -1079,7 +1079,7 @@ class Walkthrough(Scene):
                 # region must be centered too — not 0..frame_width, which shoved
                 # the array off the right edge in Shorts.
                 half = config.frame_width / 2
-                arr_region = (-half + 0.5, half - 0.5, below - (2.9 if has_panel else 0.5))
+                arr_region = (-half + 0.5, half - 0.5, below - (3.6 if has_panel else 0.5))
                 gg_region = (0.0, below - (2.4 if has_panel else 0.2), config.frame_width - 1.0, 4.4)
                 list_region = (-half + 0.5, half - 0.5, below - (2.2 if has_panel else 0.4))
             elif has_panel:

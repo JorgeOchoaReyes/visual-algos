@@ -17,6 +17,15 @@ export const ORIENTATIONS: { id: Orientation; label: string; hint: string }[] = 
   { id: "portrait", label: "Portrait", hint: "9:16 · Shorts/TikTok" },
 ];
 
+/** Roughly how long the finished video should run (drives step count + pace). */
+export type VideoLength = "short" | "standard" | "deep";
+
+export const VIDEO_LENGTHS: { id: VideoLength; label: string; hint: string }[] = [
+  { id: "short", label: "Short", hint: "~15–20s · punchy, for Shorts/TikTok" },
+  { id: "standard", label: "Standard", hint: "~60–90s · the full walkthrough" },
+  { id: "deep", label: "Deep dive", hint: "~2–4 min · every step" },
+];
+
 /** What kind of video: a CS algorithm walkthrough, or an abstract concept. */
 export type Mode = "algorithm" | "concept";
 
@@ -72,6 +81,8 @@ export interface Visualization {
   register: ConceptRegister;
   /** Video aspect: landscape (16:9) or portrait (9:16). */
   orientation: Orientation;
+  /** Target length / pacing (short ~15–20s, standard ~1min, deep ~2–4min). */
+  length: VideoLength;
   /** Absolute path to the rendered mp4 on disk (once ready). */
   videoPath: string | null;
   durationSeconds: number | null;
@@ -97,6 +108,8 @@ export interface CreateVisualizationInput {
   language?: string;
   /** Video aspect (default landscape). */
   orientation?: Orientation;
+  /** Target length / pacing (default standard; portrait defaults to short). */
+  length?: VideoLength;
   /** Algorithm walkthrough or abstract-concept animation (default algorithm). */
   mode?: Mode;
   /** Visual theme (default 8bit). */
@@ -293,6 +306,7 @@ export const IPC = {
   updateInstall: "update:install",
   updateCheck: "update:check", // renderer -> main: check for updates on demand
   updateOpenDownload: "update:openDownload", // open the Releases page in the browser
+  openLogs: "app:openLogs", // open the log file for diagnostics
   setupStatus: "setup:status", // main -> renderer broadcast
   setupRetry: "setup:retry",
   voiceSample: "voice:sample",

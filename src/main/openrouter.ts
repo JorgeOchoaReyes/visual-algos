@@ -1,4 +1,4 @@
-import type { ConceptRegister, Mode } from "@shared/types";
+import type { ConceptRegister, Mode, Orientation, VideoLength } from "@shared/types";
 import {
   MAX_OUTPUT_TOKENS,
   buildRepairPrompt,
@@ -140,8 +140,10 @@ export async function generateSpec(
   language: string,
   mode: Mode,
   register: ConceptRegister,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
 ): Promise<GeneratedSpec> {
-  return chatAndParse(apiKey, modelName, buildUserPrompt(topic, language, mode), topic, mode, register);
+  return chatAndParse(apiKey, modelName, buildUserPrompt(topic, language, mode, length, orientation), topic, mode, register);
 }
 
 /** Ask an OpenRouter model to fix an invalid spec. */
@@ -153,6 +155,8 @@ export async function repairSpec(
   error: string,
   mode: Mode,
   register: ConceptRegister,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
 ): Promise<GeneratedSpec> {
-  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode), topic, mode, register);
+  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode, length, orientation), topic, mode, register);
 }

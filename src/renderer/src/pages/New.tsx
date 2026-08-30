@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Code2, Gauge, MonitorSmartphone, Palette, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
+import { BookOpen, Clock, Code2, Gauge, MonitorSmartphone, Palette, Sparkles, Volume2, Wand2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
   formatUsd,
@@ -8,6 +8,7 @@ import {
   MODES,
   ORIENTATIONS,
   REGISTERS,
+  VIDEO_LENGTHS,
   VIDEO_THEMES,
   providerLabel,
   type AiProvider,
@@ -16,6 +17,7 @@ import {
   type Mode,
   type Orientation,
   type RenderQuality,
+  type VideoLength,
   type VideoTheme,
 } from "@shared/types";
 import { Toggle } from "../components/Toggle";
@@ -66,7 +68,15 @@ export function New({
   const [register, setRegister] = useState<ConceptRegister>("free");
   const [language, setLanguage] = useState("python");
   const [orientation, setOrientation] = useState<Orientation>("landscape");
+  const [length, setLength] = useState<VideoLength>("standard");
   const [narrate, setNarrate] = useState(false);
+
+  // Picking a format nudges the length to a sensible default (Shorts want a
+  // punchy ~15–20s; landscape wants the full walkthrough). Still overridable.
+  function pickOrientation(o: Orientation) {
+    setOrientation(o);
+    setLength(o === "portrait" ? "short" : "standard");
+  }
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +95,7 @@ export function New({
         quality,
         language,
         orientation,
+        length,
         mode,
         theme,
         register,
@@ -286,7 +297,7 @@ export function New({
                 <button
                   type="button"
                   key={o.id}
-                  onClick={() => setOrientation(o.id)}
+                  onClick={() => pickOrientation(o.id)}
                   className={`rounded-2xl border px-3 py-2.5 text-left transition ${
                     orientation === o.id
                       ? "border-accent bg-accent/10"
@@ -299,6 +310,34 @@ export function New({
               ))}
             </div>
           </div>
+        </div>
+
+        <div>
+          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
+            <Clock size={15} /> Length
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {VIDEO_LENGTHS.map((l) => (
+              <button
+                type="button"
+                key={l.id}
+                onClick={() => setLength(l.id)}
+                className={`rounded-2xl border px-3 py-2.5 text-left transition ${
+                  length === l.id
+                    ? "border-accent bg-accent/10"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                }`}
+              >
+                <div className="text-sm font-medium">{l.label}</div>
+                <div className="text-xs text-white/45">{l.hint}</div>
+              </button>
+            ))}
+          </div>
+          {orientation === "portrait" && length !== "short" && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              Shorts play best at ~15–20s — the Short length keeps it punchy.
+            </p>
+          )}
         </div>
 
         {/* Narration */}
