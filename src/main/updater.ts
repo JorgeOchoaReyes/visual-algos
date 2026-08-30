@@ -1,23 +1,29 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { IPC, type UpdateState } from "@shared/types";
 
-const RELEASES_URL = "https://github.com/JorgeOchoaReyes/visual-algos/releases/latest";
+const REPO = "JorgeOchoaReyes/visual-algos";
+const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
+const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 /**
- * Auto-update via electron-updater against the GitHub Release feed CI publishes.
+ * Updates come in two independent layers:
  *
- * Platform reality:
- *  - Windows / Linux: full silent auto-update works (download in background,
- *    apply on restart).
- *  - macOS: Squirrel.Mac REQUIRES a Developer-ID code signature to install an
- *    update. Our builds are only ad-hoc signed (no paid Apple cert), so silent
- *    install is impossible — attempting it just errors. On macOS we therefore
- *    only DETECT a newer version and point the user at the download page so they
- *    can grab the new .dmg manually.
+ *  1. The "Check for updates" button (manual) → always asks the GitHub Releases
+ *     API for the latest version and compares. This is dead simple and works on
+ *     EVERY platform: it never depends on code signing (macOS) or the
+ *     electron-updater feed / app-update.yml being intact (a source of spurious
+ *     "check failed" on Windows). When a newer version exists it points the user
+ *     at the download.
+ *
+ *  2. Best-effort SILENT background auto-update on Windows/Linux via
+ *     electron-updater (download in the background, apply on restart). Its errors
+ *     are swallowed — the reliable manual check is the source of truth for the
+ *     UI, so a background hiccup never surfaces as a scary "check failed".
+ *     macOS can't self-install unsigned, so it has no background layer.
  */
 
 const isMac = process.platform === "darwin";
-let lastVersion: string | undefined;
+let downloadedReady = false; // a background download finished (win/linux)
 
 function broadcast(state: UpdateState): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -25,74 +31,94 @@ function broadcast(state: UpdateState): void {
   }
 }
 
+function parseVer(v: string): number[] {
+  return v.replace(/^v/i, "").split(/[.\-+]/).map((n) => parseInt(n, 10) || 0);
+}
+function isNewer(latest: string, current: string): boolean {
+  const a = parseVer(latest);
+  const b = parseVer(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return false;
+}
+
+/** Reliable check: compare the app version against the latest GitHub release. */
+async function checkViaGitHub(): Promise<void> {
+  broadcast({ status: "checking" });
+  try {
+    const res = await fetch(LATEST_API, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "visual-algos-updater" },
+    });
+    if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+    const data = (await res.json()) as { tag_name?: string; name?: string };
+    const latest = (data.tag_name || data.name || "").trim();
+    if (!latest) throw new Error("no release found");
+    broadcast(
+      isNewer(latest, app.getVersion())
+        ? { status: "available", version: latest.replace(/^v/i, "") }
+        : { status: "none" },
+    );
+  } catch (err) {
+    broadcast({ status: "error", message: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 export function initAutoUpdate(): void {
-  // Apply a downloaded update now (Windows/Linux only — no-op on unsigned mac).
+  // "Install/Restart": if a background download is ready (win/linux), apply it;
+  // otherwise open the download page (macOS, or when no silent update exists).
   ipcMain.handle(IPC.updateInstall, async () => {
-    if (isMac) {
-      await shell.openExternal(RELEASES_URL);
+    if (!isMac && downloadedReady) {
+      const { autoUpdater } = await import("electron-updater");
+      autoUpdater.quitAndInstall();
       return;
     }
-    const { autoUpdater } = await import("electron-updater");
-    autoUpdater.quitAndInstall();
+    await shell.openExternal(RELEASES_URL);
   });
 
-  // Open the Releases page so the user can download the latest build manually
-  // (the practical path on macOS, and a fallback everywhere).
   ipcMain.handle(IPC.updateOpenDownload, async () => {
     await shell.openExternal(RELEASES_URL);
   });
 
-  // Trigger a check on demand (the "Check for updates" button).
+  // The manual button — always the reliable GitHub check.
   ipcMain.handle(IPC.updateCheck, async () => {
     if (!app.isPackaged) {
       broadcast({ status: "none", message: "Updates only apply to installed builds." });
       return;
     }
-    try {
-      const { autoUpdater } = await import("electron-updater");
-      await autoUpdater.checkForUpdates();
-    } catch (err) {
-      broadcast({ status: "error", message: err instanceof Error ? err.message : String(err) });
-    }
+    await checkViaGitHub();
   });
 
   if (!app.isPackaged) return;
-  void setup();
+
+  // On-launch check via the reliable path (all platforms).
+  void checkViaGitHub();
+  setInterval(() => void checkViaGitHub(), 1000 * 60 * 60 * 3);
+
+  // Best-effort silent background updater on Windows/Linux.
+  if (!isMac) void setupSilent();
 }
 
-async function setup(): Promise<void> {
+async function setupSilent(): Promise<void> {
   try {
     const { autoUpdater } = await import("electron-updater");
-    // On macOS an unsigned app can't install the update, so don't waste a
-    // background download — just detect and surface it.
-    autoUpdater.autoDownload = !isMac;
-    autoUpdater.autoInstallOnAppQuit = !isMac;
-
-    autoUpdater.on("checking-for-update", () => broadcast({ status: "checking" }));
-    autoUpdater.on("update-available", (info) => {
-      lastVersion = info?.version;
-      // On mac we can't install, so "available" is the terminal state (with a
-      // download link in the UI). On win/linux it will proceed to download.
-      broadcast({ status: "available", version: info?.version });
-    });
-    autoUpdater.on("update-not-available", () => broadcast({ status: "none" }));
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    // Only surface the actionable silent-update states; swallow everything else
+    // (including errors) so the manual check stays the UI's source of truth.
     autoUpdater.on("download-progress", (p) =>
       broadcast({ status: "downloading", percent: Math.round(p?.percent ?? 0) }),
     );
-    autoUpdater.on("update-downloaded", (info) =>
-      broadcast({ status: "ready", version: info?.version ?? lastVersion }),
-    );
-    autoUpdater.on("error", (err) =>
-      broadcast({ status: "error", message: err?.message ?? String(err) }),
-    );
-
+    autoUpdater.on("update-downloaded", (info) => {
+      downloadedReady = true;
+      broadcast({ status: "ready", version: info?.version });
+    });
+    autoUpdater.on("error", () => {
+      /* swallowed — the manual GitHub check reports status instead */
+    });
     await autoUpdater.checkForUpdates();
-
-    // Re-check periodically for long-running sessions.
-    setInterval(() => {
-      autoUpdater.checkForUpdates().catch(() => {});
-    }, 1000 * 60 * 60 * 3);
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 1000 * 60 * 60 * 3);
   } catch {
-    /* updater unavailable — ignore */
+    /* electron-updater unavailable — the manual check still works */
   }
 }
