@@ -15,6 +15,7 @@ import type { GeneratedSpec } from "./manimPrompt";
 import type { Orientation, RenderQuality } from "@shared/types";
 import { resolveFfmpegExe, resolvePythonPath } from "./env";
 import { getPaths } from "./paths";
+import { log } from "./log";
 
 const QUALITY_FLAG: Record<RenderQuality, string> = { l: "-ql", m: "-qm", h: "-qh" };
 
@@ -134,11 +135,14 @@ export async function renderSpec(params: {
       "--format", "mp4",
       join(workdir, "walkthrough.py"), "Walkthrough",
     ];
+    log.info("render", `manim ${python} ${args.join(" ")}`, { ffmpeg: ffmpegExe, workdir });
     const res = await run(python, args, { timeout: timeoutMs, cwd: workdir });
     if (res.code !== 0) {
       const tail = (res.stderr || res.stdout || "").trim().slice(-1200);
+      log.error("render", `manim exited ${res.code}`, tail);
       return { ok: false, error: `Render failed:\n${tail}` };
     }
+    log.info("render", "manim ok");
 
     let mp4s: string[] = [];
     try {

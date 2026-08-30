@@ -7,6 +7,7 @@ import {
   getVisualization,
 } from "./store";
 import { checkEnv, installManim } from "./env";
+import { logFilePath } from "./log";
 import { voiceSample } from "./elevenlabs";
 import {
   createVisualization,
@@ -33,6 +34,8 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.settingsSet, (_e, patch: Partial<Settings>) => setSettings(patch));
 
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+
+  ipcMain.handle(IPC.openLogs, () => shell.openPath(logFilePath()));
 
   ipcMain.handle(IPC.envCheck, () => checkEnv());
 

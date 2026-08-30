@@ -16,9 +16,17 @@ export async function synthesizeNarration(params: {
   text: string;
   outPath: string;
   modelId?: string;
+  /** Snappier, more expressive delivery (for Shorts) vs. calm explainer. */
+  energetic?: boolean;
 }): Promise<void> {
-  const { apiKey, voiceId, text, outPath, modelId } = params;
+  const { apiKey, voiceId, text, outPath, modelId, energetic } = params;
   const url = `${API_BASE}/${encodeURIComponent(voiceId)}`;
+
+  // Lower stability + added style = livelier, higher-energy read for Shorts;
+  // the calmer default suits longer explainer narration.
+  const voiceSettings = energetic
+    ? { stability: 0.3, similarity_boost: 0.8, style: 0.55, use_speaker_boost: true }
+    : { stability: 0.5, similarity_boost: 0.75 };
 
   const res = await fetch(url, {
     method: "POST",
@@ -30,7 +38,7 @@ export async function synthesizeNarration(params: {
     body: JSON.stringify({
       text,
       model_id: modelId || "eleven_multilingual_v2",
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      voice_settings: voiceSettings,
     }),
   });
 

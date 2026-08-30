@@ -1,5 +1,5 @@
 import type { SchemaType } from "@google/generative-ai";
-import type { ConceptRegister, Mode } from "@shared/types";
+import type { ConceptRegister, Mode, Orientation, VideoLength } from "@shared/types";
 import { GLYPH_RESPONSE_SCHEMA, GLYPH_SYSTEM_INSTRUCTION, compileGlyphSpec } from "./symbolic";
 
 export type VizKind =
@@ -506,20 +506,77 @@ export function extractJson(text: string): string {
   return t;
 }
 
-export function buildUserPrompt(topic: string, language: string, mode: Mode): string {
-  if (mode === "concept") {
-    return `Concept: ${topic}\n\nProduce the concept walkthrough JSON now.`;
+/**
+ * Per-request pacing directive: how many steps to write, how long each spoken
+ * line should be, and the tone — so the finished video lands near the length the
+ * user picked. Short mode is deliberately punchy for vertical Shorts, where
+ * viewers bounce off slow content.
+ */
+export function pacingDirective(
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
+): string {
+  if (length === "short") {
+    return [
+      "PACING — SHORT (~15–20 SECONDS TOTAL, this is a hard target):",
+      "- Write ONLY 5–7 steps. Pick the single most striking slice of the idea;",
+      "  do NOT try to cover everything — a short teaser, not a full walkthrough.",
+      "- Every 'say' line is ONE short, PUNCHY, UPBEAT sentence of 6–12 words —",
+      "  fast, energetic, high-tempo, the way a great short-form creator talks.",
+      "- Open on a hook that grabs attention in the first second; close on a",
+      "  snappy takeaway. No filler, no 'in this video', no throat-clearing.",
+      orientation === "portrait"
+        ? "- Vertical Shorts/TikTok format: keep every beat tight and punchy."
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
-  return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\nProduce the walkthrough JSON now.`;
+  if (length === "deep") {
+    return [
+      "PACING — DEEP DIVE (~2–4 MINUTES):",
+      "- Write 20–34 steps and walk through the whole idea thoroughly, one clear",
+      "  beat at a time. Don't skip the intermediate moves.",
+      "- Each 'say' line is one complete, calm, explanatory sentence.",
+    ].join("\n");
+  }
+  return [
+    "PACING — STANDARD (~60–90 SECONDS):",
+    "- Write 10–16 steps covering the core of the idea without rushing.",
+    "- Each 'say' line is one clear, natural spoken sentence.",
+  ].join("\n");
 }
 
-export function buildRepairPrompt(topic: string, language: string, error: string, mode: Mode): string {
+export function buildUserPrompt(
+  topic: string,
+  language: string,
+  mode: Mode,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
+): string {
+  const pacing = pacingDirective(length, orientation);
+  if (mode === "concept") {
+    return `Concept: ${topic}\n\n${pacing}\n\nProduce the concept walkthrough JSON now.`;
+  }
+  return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\n${pacing}\n\nProduce the walkthrough JSON now.`;
+}
+
+export function buildRepairPrompt(
+  topic: string,
+  language: string,
+  error: string,
+  mode: Mode,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
+): string {
   const what = mode === "concept" ? `The previous concept JSON for "${topic}"` : `The previous walkthrough JSON for "${topic}" (language ${language})`;
   return [
     `${what} was invalid:`,
     error,
     "",
-    "Return a corrected, complete walkthrough JSON that fixes this.",
+    pacingDirective(length, orientation),
+    "",
+    "Return a corrected, complete walkthrough JSON that fixes this and keeps the pacing above.",
   ].join("\n");
 }
 

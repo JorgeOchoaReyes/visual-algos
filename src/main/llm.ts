@@ -1,7 +1,8 @@
-import type { AiProvider, ConceptRegister, Mode, Settings } from "@shared/types";
+import type { AiProvider, ConceptRegister, Mode, Orientation, Settings, VideoLength } from "@shared/types";
 import * as gemini from "./gemini";
 import * as openrouter from "./openrouter";
 import type { GeneratedSpec } from "./manimPrompt";
+import { log } from "./log";
 
 /** The resolved provider/key/model actually used for one pipeline run. */
 export interface LlmConfig {
@@ -34,24 +35,40 @@ function client(provider: AiProvider) {
 }
 
 /** Ask the configured provider for a structured walkthrough/concept spec. */
-export function generateSpec(
+export async function generateSpec(
   llm: LlmConfig,
   topic: string,
   language: string,
   mode: Mode,
   register: ConceptRegister,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
 ): Promise<GeneratedSpec> {
-  return client(llm.provider).generateSpec(llm.apiKey, llm.model, topic, language, mode, register);
+  log.info("llm", `generate via ${llm.provider}/${llm.model}`, { mode, register, length, orientation });
+  try {
+    return await client(llm.provider).generateSpec(llm.apiKey, llm.model, topic, language, mode, register, length, orientation);
+  } catch (err) {
+    log.error("llm", `generate failed (${llm.provider}/${llm.model})`, err);
+    throw err;
+  }
 }
 
 /** Ask the configured provider to fix an invalid spec. */
-export function repairSpec(
+export async function repairSpec(
   llm: LlmConfig,
   topic: string,
   language: string,
   error: string,
   mode: Mode,
   register: ConceptRegister,
+  length: VideoLength = "standard",
+  orientation: Orientation = "landscape",
 ): Promise<GeneratedSpec> {
-  return client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode, register);
+  log.info("llm", `repair via ${llm.provider}/${llm.model}`, { reason: error.slice(0, 120), length });
+  try {
+    return await client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode, register, length, orientation);
+  } catch (err) {
+    log.error("llm", `repair failed (${llm.provider}/${llm.model})`, err);
+    throw err;
+  }
 }

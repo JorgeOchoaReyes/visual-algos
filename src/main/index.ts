@@ -6,6 +6,10 @@ import { registerIpc } from "./ipc";
 import { initAutoUpdate } from "./updater";
 import { ensureRenderer, registerSetup } from "./setup";
 import { getPaths } from "./paths";
+import { log } from "./log";
+
+process.on("uncaughtException", (err) => log.error("main", "uncaughtException", err));
+process.on("unhandledRejection", (reason) => log.error("main", "unhandledRejection", reason));
 
 /** Absolute path to the app icon, for the window (Linux/dev). */
 function iconPath(): string | undefined {
@@ -114,6 +118,7 @@ app.whenReady().then(() => {
     }
   });
 
+  log.info("main", `app ready v${app.getVersion()}`, { platform: process.platform, packaged: app.isPackaged });
   registerIpc();
   registerSetup();
   initAutoUpdate();

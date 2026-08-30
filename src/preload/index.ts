@@ -48,6 +48,7 @@ const api = {
   },
   app: {
     version: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
+    openLogs: (): Promise<void> => ipcRenderer.invoke(IPC.openLogs),
   },
   voices: {
     /** Preview clip for an ElevenLabs voice, as a data URL for <audio>. */
