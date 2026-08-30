@@ -32,7 +32,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     backgroundColor: "#0b0e14",
-    title: "Visual Algos",
+    title: "Visuals",
     icon: iconPath(),
     autoHideMenuBar: true,
     webPreferences: {

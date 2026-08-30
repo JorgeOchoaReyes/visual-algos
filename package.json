@@ -1,6 +1,6 @@
 {
   "name": "visual-algos",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "description": "Desktop app that turns a CS-algorithm topic into a 3Blue1Brown-style Manim video, rendered locally.",
   "author": "Visual Algos",

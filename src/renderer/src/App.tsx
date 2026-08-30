@@ -72,7 +72,7 @@ export default function App() {
         </AnimatePresence>
       </main>
       <footer className="border-t border-white/5 py-4 text-center text-xs text-white/35">
-        Visual Algos · renders locally with Manim
+        Visuals · renders locally with Manim
       </footer>
       <UpdateBanner />
       <SetupBanner />

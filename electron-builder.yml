@@ -1,5 +1,5 @@
 appId: com.visualalgos.app
-productName: Visual Algos
+productName: Visuals
 directories:
   buildResources: build
   output: dist
