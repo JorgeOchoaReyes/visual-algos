@@ -1075,9 +1075,13 @@ class Walkthrough(Scene):
         if has_viz:
             if PORTRAIT:
                 below = (code.get_bottom()[1] if has_panel else config.frame_height / 2 - 1.6)
-                arr_region = (0.5, config.frame_width - 0.5, below - (2.9 if has_panel else 0.5))
+                # Portrait uses centered coords (0 = frame center), so the bar
+                # region must be centered too — not 0..frame_width, which shoved
+                # the array off the right edge in Shorts.
+                half = config.frame_width / 2
+                arr_region = (-half + 0.5, half - 0.5, below - (2.9 if has_panel else 0.5))
                 gg_region = (0.0, below - (2.4 if has_panel else 0.2), config.frame_width - 1.0, 4.4)
-                list_region = (0.5, config.frame_width - 0.5, below - (2.2 if has_panel else 0.4))
+                list_region = (-half + 0.5, half - 0.5, below - (2.2 if has_panel else 0.4))
             elif has_panel:
                 # right half of the frame (centered coords: 0 = frame center)
                 arr_region = (0.4, config.frame_width * 0.5 - 0.35, -1.55)
