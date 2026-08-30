@@ -36,7 +36,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     backgroundColor: "#0b0e14",
-    title: "Visuals",
+    title: "Vizuals",
     icon: iconPath(),
     autoHideMenuBar: true,
     webPreferences: {

@@ -58,7 +58,7 @@ jobs:
           > double-click won't offer the bypass). If macOS still says the app is
           > **"damaged,"** clear the download quarantine once in Terminal:
           > ```
-          > xattr -cr "/Applications/Visuals.app"
+          > xattr -cr "/Applications/Vizuals.app"
           > ```
 
           > ⚠️ **Windows:** SmartScreen may warn on first run — click
