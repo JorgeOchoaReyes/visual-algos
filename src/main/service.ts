@@ -59,13 +59,16 @@ function norm(input: CreateVisualizationInput) {
   // Concept videos show argument lines, not source code — render them plain.
   const language = mode === "concept" ? "text" : (input.language || "python").trim() || "python";
   const narrate = !!input.narrate && !!getSettings().elevenLabsApiKey;
-  return { topic, quality, orientation, length, language, narrate, mode, theme, register };
+  // Per-video overrides (empty → fall back to the Settings default at run time).
+  const model = (input.model || "").trim() || null;
+  const voiceId = (input.voiceId || "").trim() || null;
+  return { topic, quality, orientation, length, language, narrate, mode, theme, register, model, voiceId };
 }
 
 export async function createVisualization(
   input: CreateVisualizationInput,
 ): Promise<{ id: string }> {
-  const { topic, quality, orientation, length, language, narrate, mode, theme, register } = norm(input);
+  const { topic, quality, orientation, length, language, narrate, mode, theme, register, model, voiceId } = norm(input);
   if (topic.length < 3) throw new Error("Please enter a longer topic.");
 
   const now = Date.now();
@@ -79,6 +82,8 @@ export async function createVisualization(
     language,
     orientation,
     length,
+    model,
+    voiceId,
     mode,
     theme,
     register,
@@ -98,7 +103,7 @@ export async function createVisualization(
   upsertVisualization(viz);
   emit(viz);
 
-  void runPipeline(viz.id, topic, quality, orientation, length, language, narrate, mode, theme, register);
+  void runPipeline(viz.id, topic, quality, orientation, length, language, narrate, mode, theme, register, model, voiceId);
   return { id: viz.id };
 }
 
@@ -127,6 +132,8 @@ export async function regenerateVisualization(id: string): Promise<{ id: string 
     existing.mode ?? "algorithm",
     existing.theme ?? "8bit",
     existing.register ?? "free",
+    existing.model ?? null,
+    existing.voiceId ?? null,
   );
   return { id };
 }
@@ -142,10 +149,12 @@ async function runPipeline(
   mode: Mode,
   theme: VideoTheme,
   register: ConceptRegister,
+  model: string | null,
+  voiceId: string | null,
 ): Promise<void> {
   try {
-    const llm = resolveLlm(getSettings());
-    log.info("pipeline", `start ${id}`, { topic, mode, quality, orientation, length, language, narrate, provider: llm.provider, model: llm.model });
+    const llm = resolveLlm(getSettings(), model ?? undefined);
+    log.info("pipeline", `start ${id}`, { topic, mode, quality, orientation, length, language, narrate, provider: llm.provider, model: llm.model, voiceId: voiceId ?? "(default)" });
 
     // 1. Generate the structured spec. Repair once if it's structurally
     //    invalid (a hard failure — can't render). Then, if it's valid but the
@@ -200,7 +209,7 @@ async function runPipeline(
     let narrationTrack: string | null = null;
     const narrationDir = mkdtempSync(join(tmpdir(), "visual-algos-narr-"));
     if (narrate && spec.narration) {
-      const prep = await prepareNarration(spec, narrationDir, length);
+      const prep = await prepareNarration(spec, narrationDir, length, voiceId);
       if (prep.ok) narrationTrack = prep.track!;
       else note = `Narration wasn't added: ${prep.error || "unknown error"}`;
     }
@@ -219,7 +228,7 @@ async function runPipeline(
           applySpec(id, spec);
           // The repaired spec has different steps; rebuild the aligned track.
           if (narrate && spec.narration) {
-            const prep = await prepareNarration(spec, narrationDir, length);
+            const prep = await prepareNarration(spec, narrationDir, length, voiceId);
             narrationTrack = prep.ok ? prep.track! : null;
             if (!prep.ok) note = `Narration wasn't added: ${prep.error || "unknown error"}`;
           }
@@ -287,6 +296,7 @@ async function prepareNarration(
   spec: GeneratedSpec,
   workDir: string,
   length: VideoLength = "standard",
+  voiceOverride?: string | null,
 ): Promise<{ ok: boolean; track?: string; error?: string }> {
   try {
     const settings = getSettings();
@@ -298,7 +308,7 @@ async function prepareNarration(
     const res = await buildAlignedNarration({
       ffmpegExe: ffmpeg,
       apiKey: settings.elevenLabsApiKey,
-      voiceId: settings.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM",
+      voiceId: (voiceOverride || "").trim() || settings.elevenLabsVoiceId || "21m00Tcm4TlvDq8ikWAM",
       modelId: settings.elevenLabsModel,
       // Shorts get a more expressive, higher-energy delivery to match the
       // snappy script.
