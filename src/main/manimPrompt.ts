@@ -7,6 +7,7 @@ export type VizKind =
   | "graph"
   | "tree"
   | "grid"
+  | "table" // labeled comparison table (header row + row labels + text cells)
   | "linkedlist"
   | "concept" // social-theory concept scene (actors/zones/verbs) — Concept mode
   | "none"; // no right-side visualization (points-only explainers)
@@ -103,6 +104,7 @@ export interface GeneratedSpec {
   nodes?: GraphNode[]; // graph / tree
   edges?: (string | number)[][]; // graph / tree: [from, to] or [from, to, weight]
   grid?: number[][]; // grid
+  table?: string[][]; // comparison table (row 0 = header, col 0 = row labels)
   // concept:
   tradition?: string; // whose account this animates (required for concept)
   actors?: ConceptActor[];
@@ -131,14 +133,19 @@ Then set "viz" to the visualization (or "none"):
   "array"      – sorting, searching, two-pointer, sliding window (drawn as bars)
   "graph"      – BFS, DFS, Dijkstra, topological sort (nodes + edges)
   "tree"       – BST, heap, tree traversals (nodes + edges with positions)
-  "grid"       – dynamic programming tables, matrices, grid pathfinding
+  "grid"       – dynamic programming tables, matrices, grid pathfinding.
+                 NUMERIC ONLY — every cell is a number. NEVER use "grid" for a
+                 prose comparison; it cannot show words or headers.
+  "table"      – a labeled COMPARISON table of words: comparing two or more
+                 things across several dimensions (X vs Y, pros/cons, features)
   "linkedlist" – linked-list traversal / search / build
   "none"       – no right-side visualization (points-only concept explainers)
 
 Examples: "quicksort" → mode code, viz array. "Dijkstra" → mode code, viz graph.
 "the trolley problem" → mode concept, viz none (or a graph concept-map).
 "branches of philosophy" → mode concept, viz graph. "how a binary search tree
-works" → mode code, viz tree. "compare TCP vs UDP" → mode concept, viz grid.
+works" → mode code, viz tree. "compare TCP vs UDP" → mode concept, viz table.
+"edit distance DP" → mode code, viz grid (numbers).
 
 CRITICAL (mode code): match the visualization to the DATA STRUCTURE the algorithm
 operates on. If it works on a graph or tree — nodes, neighbors, adjacency, edges,
@@ -180,6 +187,12 @@ DATA + STEP FIELDS BY viz:
 - grid: provide "grid" as a 2-D array of integers (use 0 for empty). Step fields:
     gcompare:[[r,c]] (cells read), gset:[[r,c,v]] (cell written),
     gdone:[[r,c]] (finalized/green, cumulative), gpath:[[r,c]] (final path).
+- table: provide "table" as a 2-D array of SHORT strings (each cell under ~24
+  chars). Row 0 is the HEADER row (e.g. ["", "TCP", "UDP"]) and column 0 is the
+  ROW LABELS (the dimension compared, e.g. "Ordering", "Speed"). Use 3-6 rows
+  (incl. header) and 2-4 columns. Reveal it row by row: each step highlights the
+  cells it is talking about with gcompare:[[r,c]], and gdone:[[r,c]] settles a
+  row once explained. Example first data step: gcompare:[[1,1],[1,2]].
 
 Return ONLY the JSON described by the schema. Fill only the fields relevant to
 the chosen viz.`;
@@ -214,6 +227,7 @@ export const RESPONSE_SCHEMA = {
       },
     },
     grid: { type: "array", items: { type: "array", items: { type: "integer" } } },
+    table: { type: "array", items: { type: "array", items: { type: "string" } } },
     steps: {
       type: "array",
       items: {
@@ -594,7 +608,7 @@ function strArray(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).map((s) => String(s)) : [];
 }
 
-const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "linkedlist", "none"];
+const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "table", "linkedlist", "none"];
 const MODES: PanelMode[] = ["code", "concept", "visual"];
 
 /** Parse a raw actor object (used for "actors" and step "spawn"). */
@@ -670,6 +684,13 @@ export function normalizeSpec(
     : [];
   const grid: number[][] = Array.isArray(raw.grid)
     ? (raw.grid as unknown[]).map((row) => numArray(row)).filter((r) => r.length > 0)
+    : [];
+  const table: string[][] = Array.isArray(raw.table)
+    ? (raw.table as unknown[])
+        .filter((row) => Array.isArray(row))
+        .map((row) => (row as unknown[]).map((c) => (c == null ? "" : String(c)).slice(0, 40)))
+        .filter((r) => r.length > 0)
+        .slice(0, 8)
     : [];
 
   const stepsIn = Array.isArray(raw.steps) ? (raw.steps as Record<string, unknown>[]) : [];
@@ -812,6 +833,7 @@ export function normalizeSpec(
     nodes: nodes.length ? nodes : undefined,
     edges: edges.length ? edges : undefined,
     grid: grid.length ? grid : undefined,
+    table: table.length ? table : undefined,
     tradition: typeof raw.tradition === "string" && raw.tradition.trim() ? raw.tradition.trim().slice(0, 120) : undefined,
     actors: actors.length ? actors : undefined,
     zones: zones.length ? zones : undefined,
@@ -890,6 +912,10 @@ export function validateSpec(spec: GeneratedSpec): Validated {
     if (!spec.grid || spec.grid.length < 1 || spec.grid[0].length < 1) {
       return { ok: false, reason: "Grid is missing or empty." };
     }
+  } else if (spec.viz === "table") {
+    if (!spec.table || spec.table.length < 2 || spec.table[0].length < 2) {
+      return { ok: false, reason: "Comparison table needs at least 2 rows and 2 columns." };
+    }
   } else if (spec.viz === "array" || spec.viz === "linkedlist") {
     if (spec.array.length < 2) return { ok: false, reason: "Array example is missing or too small." };
   }
@@ -920,6 +946,12 @@ export function vizChangesEnough(spec: GeneratedSpec): Validated {
     const cols = spec.grid?.[0]?.length ?? 0;
     if (rows < 3 || cols < 3) {
       return { ok: false, reason: "Grid is too small — use at least 4×4 (3×4 minimum)." };
+    }
+  } else if (spec.viz === "table") {
+    const rows = spec.table?.length ?? 0;
+    const cols = spec.table?.[0]?.length ?? 0;
+    if (rows < 3 || cols < 2) {
+      return { ok: false, reason: "Comparison table is too thin — use a header row plus at least 2 rows being compared." };
     }
   } else if (spec.viz === "array" || spec.viz === "linkedlist") {
     if (spec.array.length < 7) {

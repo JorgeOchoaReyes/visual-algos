@@ -115,6 +115,7 @@ export async function renderSpec(params: {
       nodes: spec.nodes ?? [],
       edges: spec.edges ?? [],
       grid: spec.grid ?? [],
+      table: spec.table ?? [],
       tradition: spec.tradition ?? null,
       actors: spec.actors ?? [],
       zones: spec.zones ?? [],

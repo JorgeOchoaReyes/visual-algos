@@ -419,6 +419,98 @@ class GridSurface:
         return used
 
 
+class TableSurface:
+    """Labeled comparison table: a header row + row labels + text cells, with
+    adaptive column widths. Steps light up cells so a side-by-side comparison
+    (e.g. TCP vs UDP) reads row by row as the narration reaches it.
+
+    Data: SPEC["table"] is a 2-D array of strings; row 0 is the header row and
+    column 0 is the row labels (both drawn emphasized). Step fields reuse the
+    grid verbs on (row, col): gcompare highlights, gdone settles, gpath accents.
+    """
+
+    def __init__(self, th, region):
+        self.th = th
+        self.region = region
+        self.table = [[("" if v is None else str(v)) for v in row] for row in SPEC.get("table", [])]
+        self.done = set()
+
+    def build(self, scene):
+        th = self.th
+        cx, cy, w, h = self.region
+        rows = len(self.table)
+        cols = max((len(r) for r in self.table), default=0)
+        self.rows, self.cols = rows, cols
+        if rows == 0 or cols == 0:
+            return
+        pad_x, pad_y, fs = 0.30, 0.20, 22
+        texts = {}
+        col_w = [0.0] * cols
+        row_h = [0.0] * rows
+        for r in range(rows):
+            for c in range(cols):
+                val = self.table[r][c] if c < len(self.table[r]) else ""
+                hdr = (r == 0 or c == 0)
+                t = Text(val, font=TFONT, font_size=fs, color=th["text"],
+                         **({"weight": BOLD} if hdr else {}))
+                texts[(r, c)] = t
+                col_w[c] = max(col_w[c], t.width + pad_x * 2)
+                row_h[r] = max(row_h[r], t.height + pad_y * 2)
+        col_w = [max(cw, 1.0) for cw in col_w]
+        row_h = [max(rh, 0.62) for rh in row_h]
+        total_w, total_h = sum(col_w), sum(row_h)
+        xs = [0.0]
+        for c in range(cols):
+            xs.append(xs[-1] + col_w[c])
+        ys = [0.0]
+        for r in range(rows):
+            ys.append(ys[-1] + row_h[r])
+
+        self.cells, self.texts = {}, {}
+        grp = VGroup()
+        for r in range(rows):
+            for c in range(cols):
+                px = xs[c] + col_w[c] / 2 - total_w / 2
+                py = total_h / 2 - (ys[r] + row_h[r] / 2)
+                hdr = (r == 0 or c == 0)
+                rect = Rectangle(width=col_w[c], height=row_h[r], stroke_width=2,
+                                 stroke_color=th["edge"],
+                                 fill_color=(th["panel"] if hdr else th["cell"]),
+                                 fill_opacity=1).move_to([px, py, 0])
+                t = texts[(r, c)].move_to([px, py, 0])
+                self.cells[(r, c)] = rect
+                self.texts[(r, c)] = t
+                grp.add(rect, t)
+        sc = min(1.0, w / max(total_w, 1e-3), h / max(total_h, 1e-3))
+        grp.scale(sc).move_to([cx, cy, 0])
+        self.group = grp
+        scene.play(FadeIn(grp), run_time=0.6)
+
+    def _base_fill(self, r, c):
+        return self.th["panel"] if (r == 0 or c == 0) else self.th["cell"]
+
+    def apply(self, step):
+        th, anims = self.th, []
+        for rc in step.get("gdone", []) or []:
+            if len(rc) >= 2:
+                self.done.add((rc[0], rc[1]))
+        compare = {(x[0], x[1]) for x in (step.get("gcompare", []) or []) if len(x) >= 2}
+        path = {(x[0], x[1]) for x in (step.get("gpath", []) or []) if len(x) >= 2}
+        for (r, c), rect in self.cells.items():
+            if (r, c) in path:
+                anims.append(rect.animate.set_stroke(th["accent"], 4).set_fill(th["accent"], 0.28))
+            elif (r, c) in compare:
+                anims.append(rect.animate.set_stroke(th["compare"], 4).set_fill(th["compare"], 0.26))
+            elif (r, c) in self.done:
+                anims.append(rect.animate.set_stroke(th["good"], 3).set_fill(th["good"], 0.22))
+            else:
+                anims.append(rect.animate.set_stroke(th["edge"], 2).set_fill(self._base_fill(r, c), 1))
+        return anims
+
+    def extra(self, scene, step, dur, used):
+        return used
+
+
 class ListSurface:
     """Singly linked list: boxes with next-arrows (traversal / search / build)."""
 
@@ -1095,6 +1187,8 @@ class Walkthrough(Scene):
                 surface = GraphSurface(th, gg_region)
             elif VIZ == "grid":
                 surface = GridSurface(th, gg_region)
+            elif VIZ == "table":
+                surface = TableSurface(th, gg_region)
             elif VIZ == "linkedlist":
                 surface = ListSurface(th, list_region)
             elif VIZ == "concept":
