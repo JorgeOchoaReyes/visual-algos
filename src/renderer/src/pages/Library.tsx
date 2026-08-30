@@ -38,8 +38,8 @@ export function Library() {
           </div>
           <h2 className="text-lg font-medium">No videos yet</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-white/55">
-            Describe an algorithm and Visuals animates it into a 3Blue1Brown-style video that
-            walks through the code line by line.
+            Describe any topic and Vizuals animates it into a 3Blue1Brown-style video —
+            code, a diagram, a comparison, or an animated concept.
           </p>
           <Link to="/new" className="btn8 mt-6">
             <Plus size={16} /> Create your first one

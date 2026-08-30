@@ -13,7 +13,7 @@ import {
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 // OpenRouter uses these purely for attribution on its dashboards.
 const APP_URL = "https://github.com/JorgeOchoaReyes/visual-algos";
-const APP_TITLE = "Visuals";
+const APP_TITLE = "Vizuals";
 
 type MessageContent = string | { text?: string }[] | undefined;
 

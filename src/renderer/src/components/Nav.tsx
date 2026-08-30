@@ -23,7 +23,7 @@ export function Nav({ envReady }: { envReady: boolean }) {
         <Link to="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
           <Logo />
           <span>
-            Visual<span className="text-white/50">Algos</span>
+            Viz<span className="text-white/50">uals</span>
           </span>
         </Link>
 
