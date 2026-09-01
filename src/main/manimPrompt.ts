@@ -8,6 +8,7 @@ export type VizKind =
   | "tree"
   | "grid"
   | "table" // labeled comparison table (header row + row labels + text cells)
+  | "map" // concept map: labeled nodes + relation edges (systems of ideas)
   | "linkedlist"
   | "concept" // social-theory concept scene (actors/zones/verbs) — Concept mode
   | "none"; // no right-side visualization (points-only explainers)
@@ -47,6 +48,7 @@ export interface GraphNode {
   id: string;
   x: number;
   y: number;
+  label?: string; // display text for concept maps (else the id is shown)
 }
 
 /** A single animation step (internal form the renderer consumes). */
@@ -284,15 +286,28 @@ export const SCHEMA_CAST = RESPONSE_SCHEMA as unknown as { type: SchemaType };
 
 // --- Concept mode (abstract social-theory visualizations) --------------------
 
-export const CONCEPT_SYSTEM_INSTRUCTION = `You explain abstract concepts from social theory, political economy and
-philosophy as short, precise animated diagrams. You DO NOT write animation
-code — you output structured DATA that a fixed renderer turns into a video: the
-numbered steps of the ARGUMENT on the left, an animated scene of actors, zones
-and ties on the right, and an ordered list of steps. Each step highlights ONE
-argument line, changes the scene, AND carries the exact sentence the narrator
-speaks — argument, visuals and voice stay locked together.
+export const CONCEPT_SYSTEM_INSTRUCTION = `You explain abstract concepts — philosophy, social theory, political economy,
+science, history — as short, precise animated diagrams. You DO NOT write
+animation code — you output structured DATA that a fixed renderer turns into a
+video: the numbered steps of the ARGUMENT on the left, a diagram on the right,
+and an ordered list of steps. Each step highlights ONE argument line, changes
+the diagram, AND carries the exact sentence the narrator speaks — argument,
+visuals and voice stay locked together.
 
-"viz" is ALWAYS "concept".
+FIRST choose the diagram ("viz"). This choice matters a lot — pick wrong and
+the video looks broken:
+  "map"     – a CONCEPT MAP: labeled boxes (the key ideas) joined by labeled
+              arrows (the relations). Use this for a SYSTEM OF IDEAS — a theory,
+              a philosophy, an ethics, a theory of knowledge, a taxonomy, how
+              concepts relate. THIS IS THE DEFAULT for philosophy and most
+              abstract topics (e.g. Kant's ethics, theories of justice, the
+              branches of a field).
+  "concept" – the actors/zones SCENE: dots and shapes that MOVE through space
+              over time. Use this ONLY for a SOCIAL PROCESS with agents — people
+              enclosed, dispossessed, stratified, atomized (e.g. primitive
+              accumulation, anomie, the division of labor). If nothing literally
+              moves through space, use "map", not "concept".
+  "none"    – no diagram; a points-only explainer (the argument alone carries it).
 
 COMMIT TO ONE ACCOUNT ("tradition", required): these concepts are contested —
 Durkheim's anomie is not Merton's; primitive accumulation is Marx's polemic.
@@ -306,6 +321,18 @@ causal order, each a short declarative claim (under 55 characters), plain prose
   "Peasants hold customary rights to the commons"
   "Enclosure acts fence off the land"
 Every step's "line" points at the argument line it animates (1-based).
+
+THE CONCEPT MAP (viz "map") — for a system of ideas:
+- "nodes" (4-8): the key concepts. {id, x, y, label}. "label" is the concept
+  name, SHORT (<= 18 chars; abbreviate — "Cat. Imperative"). x,y place it in a
+  0-10 x 0-10 space (x rightward, y UPWARD); spread nodes out and do NOT stack
+  two on the same row/column — leave gaps so the boxes never touch.
+- "edges": the relations as [{from, to, label}]. "label" is a SHORT relation
+  word/phrase (<= 16 chars: "acts from", "requires", "is a kind of"). Give the
+  map a clear shape (a spine or a hub), not a tangle.
+- Step fields for a map: active:[ids] (spotlight the node(s) this step is about),
+  visit:[ids] (mark a node settled/green, cumulative), edge:[{from,to}] (light
+  up a relation as you explain it). Each step uses at least one.
 
 THE SCENE: a 0-10 x 0-10 space (x rightward, y UPWARD).
 - "actors" (6-12): the individuals/groups/institutions in motion.
@@ -340,11 +367,30 @@ STEP VERBS (each step uses AT LEAST one; combine freely):
                          verbs on that same id in the same step)
 
 STEP RULES
-- 10-24 steps. Every step: "line" + ONE spoken sentence "say" + >=1 verb.
+- 8-20 steps. Every step: "line" + ONE spoken sentence "say" + at least one
+  change (a SCENE verb for viz "concept"; active/visit/edge for viz "map").
 - The three tracks MUST agree: the highlighted argument line claims what the
-  scene shows and "say" narrates.
+  diagram shows and "say" narrates.
 - Also give an overall "narration" (the say lines joined), a "title" (the
   concept's name) and a one-sentence "description".
+
+WORKED EXAMPLE (concept MAP) — topic "Kant's ethics":
+{"title":"Kant's Metaphysics of Morals","tradition":"Kant, Groundwork (1785)",
+ "viz":"map",
+ "code":["Moral worth comes from a good will","A good will acts from duty",
+  "Duty is respect for the moral law","The moral law is the Categorical Imperative",
+  "Rational agents are autonomous"],
+ "nodes":[{"id":"gw","x":1,"y":9,"label":"Good Will"},{"id":"duty","x":1,"y":5,"label":"Duty"},
+  {"id":"ml","x":5,"y":5,"label":"Moral Law"},{"id":"ci","x":9,"y":5,"label":"Cat. Imperative"},
+  {"id":"auto","x":1,"y":1,"label":"Autonomy"}],
+ "edges":[{"from":"gw","to":"duty","label":"acts from"},{"from":"duty","to":"ml","label":"respects"},
+  {"from":"ml","to":"ci","label":"is"},{"from":"gw","to":"auto","label":"grounded in"}],
+ "steps":[
+  {"line":1,"say":"Moral worth comes from a good will.","active":["gw"]},
+  {"line":2,"say":"A good will acts from duty.","active":["duty"],"edge":[{"from":"gw","to":"duty"}],"visit":["gw"]},
+  {"line":3,"say":"Duty is respect for the moral law.","active":["ml"],"edge":[{"from":"duty","to":"ml"}],"visit":["duty"]},
+  {"line":4,"say":"The moral law is the Categorical Imperative.","active":["ci"],"edge":[{"from":"ml","to":"ci"}]},
+  {"line":5,"say":"All grounded in rational autonomy.","active":["auto"],"edge":[{"from":"gw","to":"auto"}]}]}
 
 WORKED EXAMPLE (abbreviated) — topic "primitive accumulation":
 {"title":"Primitive Accumulation","tradition":"Marx, Capital Vol. I, Part VIII (1867)",
@@ -402,6 +448,22 @@ export const CONCEPT_RESPONSE_SCHEMA = {
     viz: { type: "string" },
     tradition: { type: "string" },
     code: { type: "array", items: { type: "string" } },
+    nodes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" }, label: { type: "string" } },
+        required: ["id", "x", "y"],
+      },
+    },
+    edges: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { from: { type: "string" }, to: { type: "string" }, label: { type: "string" } },
+        required: ["from", "to"],
+      },
+    },
     actors: { type: "array", items: actorSchema },
     zones: {
       type: "array",
@@ -468,12 +530,15 @@ export const CONCEPT_RESPONSE_SCHEMA = {
             },
           },
           pulse: ids,
+          active: ids,
+          visit: ids,
+          edge: idPair,
         },
         required: ["line", "say"],
       },
     },
   },
-  required: ["title", "description", "narration", "viz", "tradition", "code", "actors", "steps"],
+  required: ["title", "description", "narration", "viz", "tradition", "code", "steps"],
 } as const;
 
 export function promptFor(mode: Mode, register: ConceptRegister = "free"): string {
@@ -608,7 +673,7 @@ function strArray(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).map((s) => String(s)) : [];
 }
 
-const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "table", "linkedlist", "none"];
+const VIZ_KINDS: VizKind[] = ["array", "graph", "tree", "grid", "table", "map", "linkedlist", "none"];
 const MODES: PanelMode[] = ["code", "concept", "visual"];
 
 /** Parse a raw actor object (used for "actors" and step "spawn"). */
@@ -651,9 +716,21 @@ export function normalizeSpec(
   // The user-chosen Mode is authoritative for the visualization: Concept mode
   // always animates the concept surface; Algorithm mode lets the model pick a
   // data-structure viz (array/graph/grid/…/none).
+  // Concept mode picks between a concept MAP (a system of ideas — the default
+  // when the model returns nodes), the actors/zones SCENE (social processes),
+  // or a points-only explainer ("none"). Algorithm mode lets the model choose
+  // any data-structure viz.
+  const conceptWantsMap =
+    raw.viz === "map" ||
+    raw.viz === "graph" ||
+    (Array.isArray(raw.nodes) && (raw.nodes as unknown[]).length >= 2 && !Array.isArray(raw.actors));
   const viz: VizKind =
     mode === "concept"
-      ? "concept"
+      ? raw.viz === "none"
+        ? "none"
+        : conceptWantsMap
+          ? "map"
+          : "concept"
       : VIZ_KINDS.includes(raw.viz as VizKind)
         ? (raw.viz as VizKind)
         : "array";
@@ -671,7 +748,12 @@ export function normalizeSpec(
   const nodes: GraphNode[] = Array.isArray(raw.nodes)
     ? (raw.nodes as Record<string, unknown>[])
         .filter((n) => n && n.id != null)
-        .map((n) => ({ id: String(n.id), x: Number(n.x) || 0, y: Number(n.y) || 0 }))
+        .map((n) => ({
+          id: String(n.id),
+          x: Number(n.x) || 0,
+          y: Number(n.y) || 0,
+          ...(n.label != null && n.label !== "" ? { label: String(n.label).slice(0, 40) } : {}),
+        }))
     : [];
   const edges: (string | number)[][] = Array.isArray(raw.edges)
     ? (raw.edges as Record<string, unknown>[])
@@ -679,7 +761,9 @@ export function normalizeSpec(
         .map((e) =>
           e.weight != null && Number.isFinite(Number(e.weight))
             ? [String(e.from), String(e.to), Number(e.weight)]
-            : [String(e.from), String(e.to)],
+            : typeof e.label === "string" && e.label.trim()
+              ? [String(e.from), String(e.to), e.label.trim().slice(0, 20)]
+              : [String(e.from), String(e.to)],
         )
     : [];
   const grid: number[][] = Array.isArray(raw.grid)
@@ -898,8 +982,10 @@ export function validateSpec(spec: GeneratedSpec): Validated {
     for (const [a, b] of spec.links ?? []) {
       if (!ids.has(a) || !ids.has(b)) return { ok: false, reason: `Link references an unknown id: ${a}-${b}.` };
     }
-  } else if (spec.viz === "graph" || spec.viz === "tree") {
-    if (!spec.nodes || spec.nodes.length < 2) return { ok: false, reason: "Graph needs at least 2 nodes." };
+  } else if (spec.viz === "graph" || spec.viz === "tree" || spec.viz === "map") {
+    if (!spec.nodes || spec.nodes.length < 2) {
+      return { ok: false, reason: spec.viz === "map" ? "Concept map needs at least 2 nodes." : "Graph needs at least 2 nodes." };
+    }
     const ids = new Set(spec.nodes.map((n) => n.id));
     if (spec.edges) {
       for (const e of spec.edges) {
@@ -940,6 +1026,10 @@ export function vizChangesEnough(spec: GeneratedSpec): Validated {
   } else if (spec.viz === "graph" || spec.viz === "tree") {
     if ((spec.nodes?.length ?? 0) < 5) {
       return { ok: false, reason: "Too few nodes — use 6–9 nodes for a meaningful graph." };
+    }
+  } else if (spec.viz === "map") {
+    if ((spec.nodes?.length ?? 0) < 3) {
+      return { ok: false, reason: "Too few concepts — use 4–8 labeled nodes for a meaningful concept map." };
     }
   } else if (spec.viz === "grid") {
     const rows = spec.grid?.length ?? 0;
