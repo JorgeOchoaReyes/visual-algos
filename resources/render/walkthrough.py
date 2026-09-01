@@ -350,6 +350,147 @@ class GraphSurface:
         return used
 
 
+class MapSurface:
+    """Concept map: labeled pill-nodes joined by (optionally labeled) relation
+    edges — for SYSTEMS OF IDEAS (a theory, a philosophy) where the value is the
+    relations between concepts, not agents moving through space. Nodes carry a
+    full-text "label"; edges may carry a short relation word as a 3rd element.
+    Steps highlight nodes (active/pulse) and edges (edge/link)."""
+
+    def __init__(self, th, region):
+        self.th = th
+        self.region = region
+        self.nodes = {nd["id"]: nd for nd in SPEC.get("nodes", [])}
+        self.edges = SPEC.get("edges", [])
+        self.visited = set()
+
+    def build(self, scene):
+        th = self.th
+        cx, cy, w, h = self.region
+        ids = list(self.nodes.keys())
+        if not ids:
+            return
+        xs = [self.nodes[i].get("x", 0) for i in ids]
+        ys = [self.nodes[i].get("y", 0) for i in ids]
+        minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+
+        def npos(nd):
+            fx = (nd.get("x", 0) - minx) / (maxx - minx) if maxx > minx else 0.5
+            fy = (nd.get("y", 0) - miny) / (maxy - miny) if maxy > miny else 0.5
+            # keep a margin so wide pills don't run off the region edges
+            return np.array([cx + (fx - 0.5) * (w * 0.82), cy + (fy - 0.5) * (h * 0.82), 0.0])
+
+        def wrap(s, limit=13):
+            # Balance a long label onto two lines so pills stay narrow.
+            if len(s) <= limit or " " not in s:
+                return s
+            words = s.split()
+            best = None
+            for k in range(1, len(words)):
+                a, b = " ".join(words[:k]), " ".join(words[k:])
+                score = abs(len(a) - len(b))
+                if best is None or score < best[0]:
+                    best = (score, a + "\n" + b)
+            return best[1]
+
+        self.pills, self.groups = {}, {}
+        node_grp = VGroup()
+        for nid in ids:
+            nd = self.nodes[nid]
+            t = Text(wrap(str(nd.get("label", nid))), font=TFONT, font_size=16,
+                     color=th["text"], line_spacing=0.6).set_z_index(2)
+            pill = RoundedRectangle(
+                corner_radius=0.12, width=t.width + 0.44, height=t.height + 0.30,
+                stroke_width=3, stroke_color=th["accent2"], fill_color=th["cell"], fill_opacity=1,
+            ).set_z_index(1)
+            grp = VGroup(pill, t).move_to(npos(nd))
+            self.pills[nid] = pill
+            self.groups[nid] = grp
+            node_grp.add(grp)
+        # Shrink to fit the region if the pills overflow.
+        sc = min(1.0, w / max(node_grp.width, 1e-3), h / max(node_grp.height, 1e-3))
+        if sc < 1.0:
+            node_grp.scale(sc)
+
+        # Nudge overlapping pills apart (a few relaxation passes) so labels stay
+        # legible even when the model's coordinates place nodes too close.
+        for _ in range(120):
+            moved = False
+            for i in range(len(ids)):
+                for j in range(i + 1, len(ids)):
+                    gi, gj = self.groups[ids[i]], self.groups[ids[j]]
+                    ci, cj = gi.get_center(), gj.get_center()
+                    aw, ah = self.pills[ids[i]].width / 2 + 0.16, self.pills[ids[i]].height / 2 + 0.14
+                    bw, bh = self.pills[ids[j]].width / 2 + 0.16, self.pills[ids[j]].height / 2 + 0.14
+                    dx, dy = cj[0] - ci[0], cj[1] - ci[1]
+                    ox, oy = (aw + bw) - abs(dx), (ah + bh) - abs(dy)
+                    if ox > 0 and oy > 0:
+                        moved = True
+                        if ox <= oy:
+                            s = ox / 2 + 0.01
+                            sgn = 1.0 if dx >= 0 else -1.0
+                            gi.shift(np.array([-sgn * s, 0, 0]))
+                            gj.shift(np.array([sgn * s, 0, 0]))
+                        else:
+                            s = oy / 2 + 0.01
+                            sgn = 1.0 if dy >= 0 else -1.0
+                            gi.shift(np.array([0, -sgn * s, 0]))
+                            gj.shift(np.array([0, sgn * s, 0]))
+            if not moved:
+                break
+        # Recenter the spread group inside the region and scale to fit again.
+        node_grp = VGroup(*self.groups.values())
+        node_grp.move_to([cx, cy, 0])
+        sc2 = min(1.0, w / max(node_grp.width, 1e-3), h / max(node_grp.height, 1e-3))
+        if sc2 < 1.0:
+            node_grp.scale(sc2, about_point=np.array([cx, cy, 0]))
+
+        self.edge_lines = {}
+        egrp, elabels = VGroup(), VGroup()
+        for e in self.edges:
+            u, v = e[0], e[1]
+            if u not in self.pills or v not in self.pills:
+                continue
+            a, b = self.pills[u].get_center(), self.pills[v].get_center()
+            ln = Line(a, b, stroke_width=3, color=th["edge"]).set_z_index(0)
+            self.edge_lines[(u, v)] = ln
+            self.edge_lines[(v, u)] = ln
+            egrp.add(ln)
+            if len(e) > 2 and isinstance(e[2], str) and e[2].strip():
+                mid = (np.array(a) + np.array(b)) / 2
+                lab = Text(e[2].strip(), font=TFONT, font_size=13, color=th["dim"]).move_to(mid).set_z_index(1)
+                bg = BackgroundRectangle(lab, color=th["bg"], fill_opacity=0.9, buff=0.04).set_z_index(0)
+                elabels.add(VGroup(bg, lab))
+
+        if len(egrp):
+            scene.play(Create(egrp), run_time=0.4)
+        scene.play(FadeIn(node_grp), *( [FadeIn(elabels)] if len(elabels) else [] ), run_time=0.6)
+
+    def apply(self, step):
+        th, anims = self.th, []
+        for v in step.get("visit", []) or []:
+            self.visited.add(v)
+        active = set(step.get("active", []) or []) | set(step.get("pulse", []) or [])
+        for nid, pill in self.pills.items():
+            if nid in active:
+                anims.append(pill.animate.set_stroke(th["compare"], 6).set_fill(th["compare"], 0.30))
+            elif nid in self.visited:
+                anims.append(pill.animate.set_stroke(th["good"], 5).set_fill(th["good"], 0.24))
+            else:
+                anims.append(pill.animate.set_stroke(th["accent2"], 3).set_fill(th["cell"], 1))
+        for ln in set(self.edge_lines.values()):
+            anims.append(ln.animate.set_stroke(th["edge"], 3))
+        hot = list(step.get("edge", []) or []) + list(step.get("link", []) or [])
+        for e in hot:
+            key = (e[0], e[1]) if len(e) >= 2 else None
+            if key and key in self.edge_lines:
+                anims.append(self.edge_lines[key].animate.set_stroke(th["accent"], 6))
+        return anims
+
+    def extra(self, scene, step, dur, used):
+        return used
+
+
 class GridSurface:
     """2-D grid of cells (DP tables, matrices, grid pathfinding)."""
 
@@ -1117,7 +1258,12 @@ class Walkthrough(Scene):
         has_viz = VIZ != "none"
 
         title = Text(SPEC.get("title", "Algorithm"), font=TFONT, weight=BOLD,
-                     font_size=30 if not PORTRAIT else 40, color=th["text"]).to_edge(UP, buff=0.7 if not PORTRAIT else 1.1)
+                     font_size=30 if not PORTRAIT else 40, color=th["text"])
+        # Scale a long title down so it never runs off the frame edges.
+        _title_max_w = config.frame_width - 1.0
+        if title.width > _title_max_w:
+            title.scale(_title_max_w / title.width)
+        title.to_edge(UP, buff=0.7 if not PORTRAIT else 1.1)
         # Whose account this animates (concept mode) — shown under the title.
         tradition = None
         if SPEC.get("tradition"):
@@ -1185,6 +1331,8 @@ class Walkthrough(Scene):
                 list_region = (-config.frame_width / 2 + 0.6, config.frame_width / 2 - 0.6, 0.0)
             if VIZ in ("graph", "tree"):
                 surface = GraphSurface(th, gg_region)
+            elif VIZ == "map":
+                surface = MapSurface(th, gg_region)
             elif VIZ == "grid":
                 surface = GridSurface(th, gg_region)
             elif VIZ == "table":
