@@ -4,19 +4,19 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // 8-bit / cyberpunk neon palette
-        ink: "#080611",
-        panel: "#150f2b",
-        edge: "#382d63",
-        accent: "#22e6ff",
-        accent2: "#ff3ca6",
+        // Calm, neutral dark UI with a single violet accent.
+        ink: "#0b0c10",
+        panel: "#14161c",
+        edge: "#262933",
+        accent: "#8b7cff",
+        accent2: "#f5a524",
       },
       fontFamily: {
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
-        sans: ['"Courier New"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        sans: ['"Segoe UI Variable Text"', '"Segoe UI"', "system-ui", "-apple-system", "Inter", "Roboto", "sans-serif"],
+        mono: ['"Cascadia Code"', '"JetBrains Mono"', "Consolas", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       boxShadow: {
-        pixel: "4px 4px 0 0 rgba(0,0,0,0.55)",
+        pixel: "0 16px 40px -12px rgba(0,0,0,0.6)",
       },
     },
   },

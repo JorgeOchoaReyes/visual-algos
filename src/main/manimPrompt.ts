@@ -167,8 +167,9 @@ MUST use viz "graph"/"tree" with real "nodes" and "edges". NEVER encode a graph
 as an array/adjacency-matrix of bars. Same for grids and linked lists.
 
 PANEL RULES
-- mode "code": the "code" array is COMPLETE, correct, runnable code (6–20 short
-  lines). NEVER stub or hide logic behind a placeholder or an unshown helper (no
+- mode "code": the "code" array is COMPLETE, correct, runnable code (6–16 short
+  lines, each under ~60 characters). Show the ONE function the video is about,
+  not the whole class. NEVER stub or hide logic behind a placeholder or an unshown helper (no
   "_merge(...) # complex"): write the full body so a viewer sees how it works.
 - mode "concept": the "code" array is 5–12 SHORT bullet points in plain language
   (a phrase each, not code). Each step highlights one point as the narrator
@@ -216,8 +217,12 @@ RICH VISUALS — the renderer supports these; use them, they make the video:
   that CHANGED this step; earlier values stay on screen.
 - "takeaway" (top level): one memorable closing sentence (<= 90 chars) shown
   on the end card, e.g. "Halving the search space each step gives O(log n)."
+- graph / tree ids: give every node a SHORT id ("a", "root", "s", "c0") and
+  put any longer display text in "label" ("Summary", "Cluster 0", "U=16").
+  Every edge "from"/"to" and every step reference must repeat an id EXACTLY.
+  Keep labels under 14 characters, and step "label" annotations under 12.
 - graph: "directed": true for directed graphs (DAGs, topological sort, flow
-  networks). Give nodes a "label" when the id isn't the display text. Step
+  networks). Step
   "path":[ids] highlights a final path (the shortest path, the answer). Edges
   you list in "edge" stay tinted afterwards, so the explored part builds up.
   "queueLabel" names the frontier row: "queue", "stack", "heap", "ready".
@@ -1206,6 +1211,7 @@ export function sanitizeSpec(spec: GeneratedSpec): { spec: GeneratedSpec; droppe
   const ids = new Set((nodes ?? []).map((n) => n.id));
   if (edges && (viz === "graph" || viz === "tree" || viz === "map")) {
     const seenE = new Set<string>();
+    const before = edges.length;
     edges = edges.filter((e) => {
       const a = String(e[0]);
       const b = String(e[1]);
@@ -1214,6 +1220,7 @@ export function sanitizeSpec(spec: GeneratedSpec): { spec: GeneratedSpec; droppe
       seenE.add(k);
       return true;
     });
+    dropped += before - edges.length;
   }
   const n = spec.array.length;
   const inArr = (i: number) => Number.isInteger(i) && i >= 0 && i < n;
@@ -1310,6 +1317,28 @@ export function qualityIssues(spec: GeneratedSpec, dropped = 0): string[] {
           "Each swap and set must reflect exactly what the code does to the array.",
       );
     }
+  }
+
+  // A tree needs its edges (they drive the layout); ids must match exactly.
+  if (spec.viz === "tree" && (spec.nodes?.length ?? 0) >= 3) {
+    const n = spec.nodes!.length;
+    const e = spec.edges?.length ?? 0;
+    if (e < n - 1) {
+      issues.push(
+        `The tree has ${n} nodes but only ${e} valid edges — every non-root node needs an edge from its parent, ` +
+          'and edge "from"/"to" must be EXACT node ids (use short ids like "root", "s", "c0" and put display text in "label").',
+      );
+    }
+  }
+  if ((spec.viz === "graph" || spec.viz === "map") && (spec.nodes?.length ?? 0) >= 3 && (spec.edges?.length ?? 0) === 0) {
+    issues.push('The graph has no valid edges — edge "from"/"to" must be EXACT node ids.');
+  }
+
+  // Long code next to a diagram crowds the frame.
+  if (spec.mode === "code" && spec.viz !== "none" && spec.code.length > 18) {
+    issues.push(
+      `The code is ${spec.code.length} lines; keep it to at most 16 short lines (the essential function only) so the diagram has room.`,
+    );
   }
 
   // The panel highlight should follow the logic, not sit on one line.

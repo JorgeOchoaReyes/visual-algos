@@ -21,7 +21,6 @@ export function VisualizationCard({ v }: { v: Visualization }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      whileHover={{ y: -3 }}
     >
       <Link
         to={`/v/${v.id}`}
@@ -31,7 +30,9 @@ export function VisualizationCard({ v }: { v: Visualization }) {
           {ready ? (
             <>
               <video
-                src={window.api.video.url(v.id)}
+                // Seek a few seconds in: a metadata-only preload never paints a frame,
+                // and the first second is just the title fading in.
+                src={`${window.api.video.url(v.id)}#t=${Math.min(4, Math.max(0.5, (v.durationSeconds ?? 8) * 0.35)).toFixed(1)}`}
                 muted
                 playsInline
                 preload="metadata"
@@ -49,22 +50,35 @@ export function VisualizationCard({ v }: { v: Visualization }) {
               )}
             </>
           ) : (
-            <div className="grid h-full w-full place-items-center bg-ink/40 text-white/30">
+            <div className="grid-bg flex h-full w-full flex-col items-center justify-center gap-2 bg-[#101218] text-white/40">
               {v.status === "error" ? (
-                <AlertTriangle size={22} className="text-red-400/70" />
+                <>
+                  <AlertTriangle size={20} className="text-red-400/70" />
+                  <span className="text-xs">Generation failed</span>
+                </>
               ) : (
-                <Loader2 size={22} className="animate-spin text-accent/70" />
+                <>
+                  <Loader2 size={20} className="animate-spin text-accent" />
+                  <span className="text-xs">{v.status === "rendering" ? "Rendering…" : "Writing scene…"}</span>
+                </>
               )}
             </div>
           )}
         </div>
-        <div className="flex flex-1 flex-col gap-2 p-4">
-          <h3 className="line-clamp-2 font-medium leading-snug group-hover:text-white">
+        <div className="flex flex-1 flex-col gap-1.5 px-4 py-3.5">
+          <h3 className="line-clamp-2 text-[14px] font-medium leading-snug text-white/90 group-hover:text-white">
             {v.title || v.topic}
           </h3>
-          <div className="mt-auto flex items-center justify-between pt-2">
-            <StatusBadge status={v.status} />
-            <span className="text-xs text-white/40">{timeAgo(v.createdAt)}</span>
+          <div className="mt-auto flex items-center justify-between pt-1.5 text-xs text-white/40">
+            {v.status === "ready" ? (
+              <span>
+                {v.durationSeconds ? `${Math.round(v.durationSeconds)}s · ` : ""}
+                {(v.orientation ?? "landscape") === "portrait" ? "Short" : "Landscape"}
+              </span>
+            ) : (
+              <StatusBadge status={v.status} />
+            )}
+            <span>{timeAgo(v.createdAt)}</span>
           </div>
         </div>
       </Link>

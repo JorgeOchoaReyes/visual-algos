@@ -2,21 +2,25 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
+  ChevronDown,
+  Code2,
   FolderOpen,
+  ListOrdered,
   Loader2,
   RotateCw,
   Trash2,
   Volume2,
 } from "lucide-react";
-import { isTerminal, type VisualizationStatus } from "@shared/types";
+import { VIDEO_THEMES, isTerminal, type VisualizationStatus } from "@shared/types";
 import { CodeBlock } from "../components/CodeBlock";
 import { StatusBadge } from "../components/StatusBadge";
 import { useVisualization } from "../lib/hooks";
 
 const STEPS: { key: VisualizationStatus; label: string }[] = [
-  { key: "generating", label: "Writing the Manim scene" },
+  { key: "generating", label: "Writing the scene" },
   { key: "rendering", label: "Rendering the video" },
   { key: "ready", label: "Done" },
 ];
@@ -96,33 +100,38 @@ export function Detail() {
     );
   }
 
+  const concept = (viz.mode ?? "algorithm") === "concept";
+  const meta = [
+    viz.durationSeconds ? `${Math.round(viz.durationSeconds)}s` : null,
+    (viz.orientation ?? "landscape") === "portrait" ? "Short · 9:16" : "Landscape · 16:9",
+    viz.theme ? VIDEO_THEMES.find((t) => t.id === viz.theme)?.label : null,
+    viz.hasAudio ? "Narrated" : null,
+  ].filter(Boolean);
+
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-4xl px-6 py-8">
       <Link
         to="/"
-        className="mb-5 inline-flex items-center gap-1.5 text-sm text-white/50 transition hover:text-white"
+        className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-white/45 transition hover:text-white"
       >
-        <ArrowLeft size={15} /> Library
+        <ArrowLeft size={14} /> Library
       </Link>
 
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold leading-snug">
-            {viz.title || viz.topic}
-            {viz.hasAudio && <Volume2 size={16} className="text-accent" />}
-          </h1>
-          {viz.tradition && (
-            <p className="mt-0.5 text-sm italic text-white/45">{viz.tradition}</p>
+        <div className="min-w-0">
+          <h1 className="text-[24px] font-semibold leading-tight tracking-tight">{viz.title || viz.topic}</h1>
+          {viz.tradition && <p className="mt-1 text-[13px] italic text-white/45">{viz.tradition}</p>}
+          {viz.title && viz.title !== viz.topic && (
+            <p className="mt-1 truncate text-[13px] text-white/40">“{viz.topic}”</p>
           )}
-          <p className="mt-1 text-sm text-white/50">{viz.topic}</p>
         </div>
-        <StatusBadge status={viz.status} />
+        {viz.status !== "ready" && <StatusBadge status={viz.status} />}
       </div>
 
       <motion.div
         initial={{ opacity: 0, scale: 0.99 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="overflow-hidden rounded-2xl border border-white/[0.07] bg-black shadow-xl shadow-black/30"
+        className="overflow-hidden rounded-xl border border-edge bg-black shadow-pixel"
       >
         {viz.status === "ready" && viz.videoPath ? (
           <video
@@ -131,89 +140,105 @@ export function Detail() {
             controls
             autoPlay
             playsInline
-            className="aspect-video w-full"
+            className={`w-full ${(viz.orientation ?? "landscape") === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh]" : "aspect-video"}`}
           />
         ) : viz.status === "error" ? (
-          <div className="aspect-video w-full overflow-auto bg-panel p-8">
-            <p className="font-medium text-red-300">Rendering failed</p>
-            <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-white/50">
+          <div className="flex aspect-video w-full flex-col justify-center bg-panel p-8">
+            <p className="flex items-center gap-2 font-medium text-red-300">
+              <AlertTriangle size={17} /> Generation failed
+            </p>
+            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-edge bg-ink/60 p-3 font-mono text-xs text-white/55">
               {viz.error || "Unknown error."}
             </pre>
-            <button onClick={onRegenerate} className="btn8 mt-4">
-              <RotateCw size={14} /> Try again
-            </button>
+            <div>
+              <button onClick={onRegenerate} className="btn8 mt-4">
+                <RotateCw size={14} /> Try again
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="aspect-video w-full bg-panel p-8">
+          <div className="grid-bg flex aspect-video w-full flex-col justify-center bg-panel px-10">
             <Progress status={viz.status} />
-            <p className="mt-6 text-xs text-white/40">This updates live — no need to refresh.</p>
+            <p className="mt-6 text-xs text-white/40">This updates live — you can leave this page.</p>
           </div>
         )}
       </motion.div>
 
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-white/45">
+          {meta.map((m, i) => (
+            <span key={i} className="rounded-md border border-edge bg-white/[0.02] px-2 py-1">
+              {m}
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {viz.status === "ready" && viz.videoPath && (
+            <button onClick={() => window.api.video.revealInFolder(viz.videoPath!)} className="btn8 btn8--ghost">
+              <FolderOpen size={15} /> Show in folder
+            </button>
+          )}
+          {viz.status === "ready" && (
+            <button onClick={onRegenerate} className="btn8 btn8--ghost">
+              <RotateCw size={15} /> Regenerate
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            disabled={deleting}
+            title="Delete video"
+            className="btn8 btn8--ghost w-9 px-0 hover:!border-red-500/40 hover:!text-red-300"
+          >
+            {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+          </button>
+        </div>
+      </div>
+
       {viz.note && viz.status === "ready" && (
-        <p className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+        <p className="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5 text-xs text-amber-200">
           {viz.note}
         </p>
       )}
 
       {viz.description && (
-        <p className="mt-5 text-sm leading-relaxed text-white/70">{viz.description}</p>
+        <p className="mt-5 max-w-3xl text-[14px] leading-relaxed text-white/70">{viz.description}</p>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        {viz.status === "ready" && viz.videoPath && (
-          <button
-            onClick={() => window.api.video.revealInFolder(viz.videoPath!)}
-            className="btn8"
-          >
-            <FolderOpen size={15} /> Show in folder
-          </button>
+      <div className="mt-6 space-y-3">
+        {viz.narration && isTerminal(viz.status) && (
+          <Section icon={<Volume2 size={15} />} title={viz.hasAudio ? "Narration script" : "Script"}>
+            <p className="text-[13.5px] leading-relaxed text-white/70">{viz.narration}</p>
+          </Section>
         )}
-        {isTerminal(viz.status) && (
-          <button onClick={onRegenerate} className="btn8 btn8--ghost">
-            <RotateCw size={15} /> Regenerate
-          </button>
-        )}
-        <button
-          onClick={onDelete}
-          disabled={deleting}
-          className="flex items-center gap-1.5 rounded-xl border border-white/10 px-4 py-2 text-sm text-white/60 transition hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
-        >
-          <Trash2 size={15} /> {deleting ? "Deleting…" : "Delete"}
-        </button>
-      </div>
-
-      {viz.narration && isTerminal(viz.status) && (
-        <div className="mt-8">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/70">
-            <Volume2 size={14} /> Narration script
-          </h2>
-          <p className="rounded-xl border border-white/[0.07] bg-panel/50 p-4 text-sm leading-relaxed text-white/70">
-            {viz.narration}
-          </p>
-        </div>
-      )}
-
-      {viz.manimCode && isTerminal(viz.status) && (
-        <div className="mt-8">
-          {(viz.mode ?? "algorithm") === "concept" ? (
-            <>
-              <h2 className="mb-3 text-sm font-medium text-white/70">The argument</h2>
-              <ol className="list-inside list-decimal space-y-1.5 rounded-xl border border-white/[0.07] bg-panel/50 p-4 text-sm leading-relaxed text-white/70">
+        {viz.manimCode && isTerminal(viz.status) && (
+          <Section icon={concept ? <ListOrdered size={15} /> : <Code2 size={15} />} title={concept ? "The argument" : "Code shown in the video"}>
+            {concept ? (
+              <ol className="list-inside list-decimal space-y-1.5 text-[13.5px] leading-relaxed text-white/70">
                 {viz.manimCode.split("\n").map((line, i) => (
                   <li key={i}>{line}</li>
                 ))}
               </ol>
-            </>
-          ) : (
-            <>
-              <h2 className="mb-3 text-sm font-medium text-white/70">Generated Manim scene</h2>
-              <CodeBlock code={viz.manimCode} />
-            </>
-          )}
-        </div>
-      )}
+            ) : (
+              <CodeBlock code={viz.manimCode} language={viz.language || "python"} />
+            )}
+          </Section>
+        )}
+      </div>
     </div>
+  );
+}
+
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <details className="panel8 group">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[14px] font-medium text-white/80">
+        <span className="flex items-center gap-2">
+          <span className="text-white/45">{icon}</span>
+          {title}
+        </span>
+        <ChevronDown size={16} className="text-white/40 transition group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-edge p-4">{children}</div>
+    </details>
   );
 }

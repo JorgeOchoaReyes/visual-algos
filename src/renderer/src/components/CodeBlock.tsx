@@ -15,8 +15,8 @@ export function CodeBlock({ code, language = "python" }: { code: string; languag
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d1017]">
-      <div className="flex items-center justify-between border-b border-white/[0.07] px-3.5 py-2 text-xs text-white/40">
+    <div className="relative overflow-hidden rounded-xl border border-edge bg-[#0e1015]">
+      <div className="flex items-center justify-between border-b border-edge px-3.5 py-2 text-xs text-white/40">
         <span className="font-mono">{language}</span>
         <button
           onClick={copy}
@@ -26,7 +26,7 @@ export function CodeBlock({ code, language = "python" }: { code: string; languag
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="max-h-[460px] overflow-auto p-4 text-xs leading-relaxed">
+      <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-relaxed">
         <code className="font-mono text-white/90">{code}</code>
       </pre>
     </div>

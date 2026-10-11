@@ -70,6 +70,55 @@ THEMES = {
     ),
 }
 
+
+def _raise_encoder_quality():
+    """Manim encodes every clip with libx264 at a hard-coded crf 23, which
+    smears thin text and line edges. Wrap the `av` module its file writer uses
+    so new H.264 streams get crf 16 + the "animation" tune instead. Best
+    effort: any surprise in Manim's internals leaves the default untouched."""
+    try:
+        import av as _av
+        from manim.scene import scene_file_writer as _sfw
+
+        class _Container:
+            def __init__(self, c):
+                self._c = c
+
+            def add_stream(self, codec_name=None, rate=None, options=None, **kw):
+                if codec_name == "libx264":
+                    options = dict(options or {})
+                    options["crf"] = "16"
+                    options.setdefault("preset", "medium")
+                    options.setdefault("tune", "animation")
+                return self._c.add_stream(codec_name, rate=rate, options=options, **kw)
+
+            def __getattr__(self, name):
+                return getattr(self._c, name)
+
+            def __enter__(self):
+                self._c.__enter__()
+                return self
+
+            def __exit__(self, *a):
+                return self._c.__exit__(*a)
+
+        class _AvProxy:
+            def __getattr__(self, name):
+                return getattr(_av, name)
+
+            @staticmethod
+            def open(*a, **kw):
+                c = _av.open(*a, **kw)
+                return _Container(c) if kw.get("mode") == "w" or (len(a) > 1 and a[1] == "w") else c
+
+        if getattr(_sfw, "av", None) is _av:
+            _sfw.av = _AvProxy()
+    except Exception:
+        pass
+
+
+_raise_encoder_quality()
+
 SPEC = json.load(open("spec.json", "r", encoding="utf-8"))
 if not isinstance(SPEC, dict):
     SPEC = {}
@@ -207,6 +256,24 @@ def pill(text_mob, th, stroke=None, fill=None, pad_x=0.18, pad_y=0.10, radius=0.
     return VGroup(bg, text_mob)
 
 
+def _out_first(t):
+    return smooth(min(1.0, t / 0.45))
+
+
+def _in_second(t):
+    return smooth(max(0.0, (t - 0.4) / 0.6))
+
+
+def swap(old, new):
+    """Animations replacing `old` with `new` at the same place, without overlap."""
+    out = []
+    if old is not None and len(old.submobjects) + (1 if old.points.size else 0) > 0:
+        out.append(FadeOut(old, rate_func=_out_first))
+    if new is not None:
+        out.append(FadeIn(new, rate_func=_in_second))
+    return out
+
+
 def name_color(name, th):
     """Stable, distinct color per pointer/variable name."""
     palette = [th["accent"], th["accent2"], th["swap"], th["good"], th["c_num"]]
@@ -323,6 +390,22 @@ def tree_layout(nodes, edges):
     for i in ids:
         children[i].sort(key=lambda c: mx[c])
     out, counter = {}, [0]
+
+    if max(len(c) for c in children.values()) > 2:
+        def place(n, depth):
+            kids = children[n]
+            if not kids:
+                out[n] = (float(counter[0]), -float(depth))
+                counter[0] += 1
+                return
+            for c in kids:
+                place(c, depth + 1)
+            out[n] = ((out[kids[0]][0] + out[kids[-1]][0]) / 2.0, -float(depth))
+
+        for r in sorted(roots, key=lambda r: mx[r]):
+            place(r, 0)
+            counter[0] += 1
+        return out
 
     def walk(n, depth):
         kids = children[n]
@@ -545,9 +628,13 @@ class ArraySurface:
 
 class GraphSurface:
     """Nodes + edges. Trees get an automatic tidy layout; graphs keep the
-    model's coordinates but are spread apart so nodes never collide. Edges stop
-    at the node boundary, carry arrowheads when the graph is directed, and stay
-    tinted once traversed so the explored structure builds up on screen."""
+    model's coordinates but are spread apart so nodes never collide. Short ids
+    draw as circles; word labels ("Summary", "Cluster 0") draw as pills sized to
+    their text. Edges stop at the node boundary, carry arrowheads when the graph
+    is directed, and stay tinted once traversed. Per-step annotations are placed
+    in the first free slot around their node, so they never pile up."""
+
+    LABEL_MAX = 14
 
     def __init__(self, th, box, tree=False):
         self.th = th
@@ -566,75 +653,155 @@ class GraphSurface:
         steps = SPEC.get("steps", [])
         self.use_queue = any("queue" in s and s.get("queue") is not None for s in steps)
         self.queue_label = str(SPEC.get("queueLabel") or "queue")[:12]
+        self.texts = {k: str(nd.get("label") or k)[:self.LABEL_MAX] for k, nd in self.nodes.items()}
+        self.pills = any(len(t) > 3 for t in self.texts.values())
+        self.has_labels = any(s.get("label") for s in steps)
+
+    # ---- layout -----------------------------------------------------------
+    def _raw_positions(self):
+        raw = tree_layout(self.nodes, self.edges) if self.tree else None
+        if raw is not None:
+            return raw
+        raw = {k: (float(nd.get("x", 0) or 0), float(nd.get("y", 0) or 0)) for k, nd in self.nodes.items()}
+        xs = {round(p[0], 3) for p in raw.values()}
+        ys = {round(p[1], 3) for p in raw.values()}
+        if len(raw) > 4 and (len(xs) == 1 or len(ys) == 1):
+            ids = list(raw.keys())  # collinear coordinates: use a circle
+            return {k: (np.cos(2 * PI * j / len(ids)), np.sin(2 * PI * j / len(ids))) for j, k in enumerate(ids)}
+        if self.tree and len(ys) >= 2:
+            # No usable edges, so trust the coordinates — but a tree's root row
+            # is its smallest; if that row is at the bottom, the model meant y
+            # downward. Flip so the root sits on top.
+            rows = {}
+            for p in raw.values():
+                rows.setdefault(round(p[1], 3), 0)
+                rows[round(p[1], 3)] += 1
+            lo, hi = min(rows), max(rows)
+            if rows[lo] < rows[hi]:
+                raw = {k: (p[0], -p[1]) for k, p in raw.items()}
+        return raw
 
     def _layout(self):
         cx, cy, w, h = self.box
         qh = 0.75 if self.use_queue else 0.0
-        self.core = (cx, cy + qh / 2, w, h - qh)
-        raw = None
-        if self.tree:
-            raw = tree_layout(self.nodes, self.edges)
-        if raw is None:
-            raw = {k: (float(nd.get("x", 0) or 0), float(nd.get("y", 0) or 0)) for k, nd in self.nodes.items()}
-            xs = {round(p[0], 3) for p in raw.values()}
-            ys = {round(p[1], 3) for p in raw.values()}
-            if len(raw) >= 3 and (len(xs) == 1 or len(ys) == 1) and len(raw) > 4:
-                # Collinear coordinates: fall back to a circle.
-                ids = list(raw.keys())
-                raw = {k: (np.cos(2 * PI * j / len(ids)), np.sin(2 * PI * j / len(ids))) for j, k in enumerate(ids)}
+        top_pad = 0.35 if self.has_labels else 0.0  # room for annotations above the top row
+        self.core = (cx, cy + qh / 2 - top_pad / 2, w, h - qh - top_pad)
+        raw = self._raw_positions()
         n = max(1, len(raw))
-        R = 0.36 if n <= 8 else (0.31 if n <= 12 else 0.26)
-        c_x, c_y, c_w, c_h = self.core
-        pos = fit_points(raw, self.core, margin=(R + 0.1, R + 0.25))
-        pos = relax(pos, 2 * R + 0.45)
-        # Re-fit after relaxation in case nodes were pushed out of the box.
-        pos = fit_points({k: (p[0], p[1]) for k, p in pos.items()}, self.core, margin=(R + 0.1, R + 0.25)) \
-            if len(pos) > 1 else pos
-        if len(pos) > 1:
+        # Size the node shape first (pills are as wide as their text).
+        fs = 19 if n <= 8 else (17 if n <= 12 else 15)
+        probes = {k: T(t, font=FONT, font_size=fs) for k, t in self.texts.items()}
+        if self.pills:
+            nh = max(p.height for p in probes.values()) + 0.30
+            nw = {k: max(nh * 1.3, p.width + 0.36) for k, p in probes.items()}
+        else:
+            nh = 0.72 if n <= 8 else (0.62 if n <= 12 else 0.52)
+            nw = {k: nh for k in probes}
+        maxw = max(nw.values()) if nw else nh
+        # Shrink everything if the widest row can't fit side by side.
+        rows = {}
+        for k, p in raw.items():
+            rows.setdefault(round(p[1], 3), []).append(k)
+        widest = max((sum(nw[k] for k in ks) + 0.35 * (len(ks) - 1)) for ks in rows.values()) if rows else maxw
+        sc = min(1.0, (self.core[2] - 0.2) / max(widest, 1e-3))
+        self.fs = fs * sc
+        self.nh = nh * sc
+        self.nw = {k: v * sc for k, v in nw.items()}
+        maxw *= sc
+        box = self.core
+        levels = len(rows)
+        if self.tree and levels >= 2:
+            # Don't stretch a shallow tree over the whole height: cap the gap
+            # between levels so edges stay short and the tree reads as a unit.
+            span = min(self.core[3], (levels - 1) * 1.55 + self.nh + 0.3)
+            box = (self.core[0], self.core[1], self.core[2], span)
+        pos = fit_points(raw, box, margin=(maxw / 2 + 0.05, self.nh / 2 + 0.1))
+        if self.tree:
+            pos = self._spread_rows(pos)
+        else:
+            pos = relax(pos, max(self.nh, maxw * 0.9) + 0.3)
+            if len(pos) > 1:
+                pos = fit_points({k: (p[0], p[1]) for k, p in pos.items()}, box, margin=(maxw / 2 + 0.05, self.nh / 2 + 0.1))
+        if not self.pills and len(pos) > 1:
             mind = min(np.linalg.norm((pos[a] - pos[b])[:2]) for a in pos for b in pos if a < b)
-            # Nodes grow into generous spacing (portrait) and shrink when crowded.
-            R = max(0.2, min(0.46, mind * 0.33))
-        self.R = R
+            d = max(0.42, min(0.92, mind * 0.62))  # circles grow into generous spacing
+            self.nh = d
+            self.nw = {k: d for k in pos}
         return pos
 
-    def _edge_mob(self, u, v, color, width, opacity=1.0):
-        pu, pv = self.pos[u], self.pos[v]
-        d = pv - pu
+    def _spread_rows(self, pos):
+        """Push same-level nodes apart until neighbours have a clear gap, then
+        squeeze horizontally (about the center) if the level got too wide."""
+        cx, w = self.core[0], self.core[2]
+        rows = {}
+        for k, p in pos.items():
+            rows.setdefault(round(p[1], 2), []).append(k)
+        gap = 0.36
+        for ks in rows.values():
+            ks.sort(key=lambda k: pos[k][0])
+            for _ in range(50):
+                moved = False
+                for a, b in zip(ks, ks[1:]):
+                    need = (self.nw[a] + self.nw[b]) / 2 + gap
+                    have = pos[b][0] - pos[a][0]
+                    if have < need - 1e-3:
+                        push = (need - have) / 2
+                        pos[a] = pos[a] + np.array([-push, 0, 0])
+                        pos[b] = pos[b] + np.array([push, 0, 0])
+                        moved = True
+                if not moved:
+                    break
+        xs0 = [pos[k][0] - self.nw[k] / 2 for k in pos]
+        xs1 = [pos[k][0] + self.nw[k] / 2 for k in pos]
+        lo, hi = min(xs0), max(xs1)
+        mid = (lo + hi) / 2
+        sc = min(1.0, (w - 0.1) / max(hi - lo, 1e-3))
+        for k in pos:
+            pos[k] = np.array([cx + (pos[k][0] - mid) * sc, pos[k][1], 0.0])
+        return pos
+
+    def _boundary(self, nid, toward, pad=0.0):
+        c = self.pos[nid]
+        if self.pills:
+            return _rect_exit(c, self.nw[nid] / 2 + pad, self.nh / 2 + pad, toward)
+        d = np.array(toward, dtype=float) - c
         L = np.linalg.norm(d[:2])
-        if L < 1e-6:
-            return Line(pu, pu + RIGHT * 0.01, stroke_width=0)
-        un = d / L
-        a, b = pu + un * self.R, pv - un * self.R
+        return c if L < 1e-6 else c + d / L * (self.nh / 2 + pad)
+
+    def _shape(self, nid):
+        th = self.th
+        if self.pills:
+            m = RoundedRectangle(corner_radius=min(0.22, self.nh / 2), width=self.nw[nid], height=self.nh)
+        else:
+            m = Circle(radius=self.nh / 2)
+        return m.set_stroke(th["accent2"], 4).set_fill(th["cell"], 1).move_to(self.pos[nid]).set_z_index(2)
+
+    def _edge_mob(self, u, v, color, width, opacity=1.0):
+        a = self._boundary(u, self.pos[v], 0.02)
+        b = self._boundary(v, self.pos[u], 0.04)
+        if np.linalg.norm((b - a)[:2]) < 0.05:
+            return Line(a, a + RIGHT * 0.01, stroke_width=0)
         if self.directed:
             m = Arrow(a, b, buff=0, stroke_width=width, color=color, tip_length=0.18,
                       max_tip_length_to_length_ratio=0.35, max_stroke_width_to_length_ratio=40)
+            m.tip.set_fill(color, opacity=opacity)
         else:
             m = Line(a, b, stroke_width=width, color=color)
         m.set_stroke(opacity=opacity)
-        if self.directed:
-            m.tip.set_fill(color, opacity=opacity)
         return m.set_z_index(0)
 
-    def _node_text(self, nid):
-        nd = self.nodes[nid]
-        txt = str(nd.get("label") or nid)[:10]
-        return T(txt, font=FONT, font_size=20, color=self.th["text"])
-
-    def _fit_scale(self, t):
-        return min(1.0, self.R * 1.55 / max(t.width, 1e-6), self.R * 1.1 / max(t.height, 1e-6))
-
+    # ---- build ------------------------------------------------------------
     def build(self, scene):
         th = self.th
         self.pos = self._layout()
-        self.edge_mobs, self.ekey = {}, {}
+        self.edge_mobs = {}
         egrp, wgrp = VGroup(), VGroup()
         for e in self.edges:
             u, v = str(e[0]), str(e[1])
-            key = (u, v)
-            if key in self.edge_mobs or (not self.directed and (v, u) in self.edge_mobs):
+            if (u, v) in self.edge_mobs or (not self.directed and (v, u) in self.edge_mobs):
                 continue
             m = self._edge_mob(u, v, th["line"], 3.5)
-            self.edge_mobs[key] = m
+            self.edge_mobs[(u, v)] = m
             egrp.add(m)
             if len(e) > 2 and str(e[2]).strip():
                 mid = (self.pos[u] + self.pos[v]) / 2
@@ -645,21 +812,17 @@ class GraphSurface:
                     nrm = -nrm
                 lab = T(str(e[2])[:8], font=FONT, font_size=15, color=th["dim"])
                 wgrp.add(pill(lab, th, fill=th["bg"], pad_x=0.06, pad_y=0.03, radius=0.06).move_to(mid + nrm * 0.2).set_z_index(1))
-
         self.ncirc, self.ntext = {}, {}
-        ngrp = VGroup()
-        texts = {nid: self._node_text(nid) for nid in self.nodes}
+        texts = {k: T(t, font=FONT, font_size=self.fs, color=th["text"]) for k, t in self.texts.items()}
         if texts:
             # One glyph size on every node: the most-shrunk label sets it.
-            smin = min(self._fit_scale(t) for t in texts.values())
+            smin = min(min(1.0, (self.nw[k] - 0.16) / max(t.width, 1e-6), (self.nh - 0.12) / max(t.height, 1e-6))
+                       for k, t in texts.items())
             for t in texts.values():
                 t.scale(smin)
         for nid in self.nodes:
-            c = Circle(radius=self.R, stroke_width=4, stroke_color=th["accent2"],
-                       fill_color=th["cell"], fill_opacity=1).move_to(self.pos[nid]).set_z_index(2)
-            t = texts[nid].move_to(self.pos[nid]).set_z_index(3)
-            self.ncirc[nid], self.ntext[nid] = c, t
-            ngrp.add(c)
+            self.ncirc[nid] = self._shape(nid)
+            self.ntext[nid] = texts[nid].move_to(self.pos[nid]).set_z_index(3)
         cx, cy, w, h = self.box
         self.queue_y = cy - h / 2 + 0.32
         self.queue_row = self._build_queue([])
@@ -671,7 +834,7 @@ class GraphSurface:
         th = self.th
         g = VGroup(T(self.queue_label + ":", font=FONT, font_size=17, color=th["dim"]))
         for it in list(items)[:10]:
-            t = T(str(it)[:6], font=FONT, font_size=18, color=th["text"])
+            t = T(str(it)[:8], font=FONT, font_size=18, color=th["text"])
             box = RoundedRectangle(corner_radius=0.06, width=max(0.5, t.width + 0.22), height=0.5, stroke_width=3,
                                    stroke_color=th["accent"], fill_color=th["panel"], fill_opacity=1)
             g.add(VGroup(box, t.move_to(box)))
@@ -685,12 +848,50 @@ class GraphSurface:
     def _key(self, u, v):
         if (u, v) in self.edge_mobs:
             return (u, v)
-        if not self.directed and (v, u) in self.edge_mobs:
-            return (v, u)
-        if (v, u) in self.edge_mobs:  # tolerate a reversed directed edge
+        if (v, u) in self.edge_mobs:  # undirected, or a reversed directed edge
             return (v, u)
         return None
 
+    # ---- annotations --------------------------------------------------------
+    def _rect_of(self, m):
+        c = m.get_center()
+        return (c[0] - m.width / 2, c[1] - m.height / 2, c[0] + m.width / 2, c[1] + m.height / 2)
+
+    def _place_label(self, nid, mob):
+        """Put an annotation in the first slot around its node that collides with
+        no node, edge label or other annotation, and stays inside the frame."""
+        c = self.pos[nid]
+        hw, hh = self.nw[nid] / 2, self.nh / 2
+        lw, lh = mob.width / 2, mob.height / 2
+        g = 0.08
+        cands = [
+            c + np.array([0, hh + lh + g, 0]),                 # above
+            c + np.array([hw + lw + g, 0, 0]),                 # right
+            c + np.array([-hw - lw - g, 0, 0]),                # left
+            c + np.array([0, -hh - lh - g, 0]),                # below
+            c + np.array([hw + lw * 0.6, hh + lh, 0]),         # upper right
+            c + np.array([-hw - lw * 0.6, hh + lh, 0]),        # upper left
+            c + np.array([0, hh + 3 * lh + 2 * g, 0]),         # above, second tier
+            c + np.array([0, -hh - 3 * lh - 2 * g, 0]),        # below, second tier
+        ]
+        blockers = [self._rect_of(s) for k, s in self.ncirc.items() if k != nid]
+        blockers += [self._rect_of(l) for k, l in self.labels.items() if k != nid]
+        if self.use_queue:
+            blockers.append(self._rect_of(self.queue_row))
+
+        bx, by, bw, bh = self.box
+
+        def bad(p):
+            r = (p[0] - lw - 0.03, p[1] - lh - 0.03, p[0] + lw + 0.03, p[1] + lh + 0.03)
+            hits = sum(1 for b in blockers if r[0] < b[2] and b[0] < r[2] and r[1] < b[3] and b[1] < r[3])
+            off = (r[0] < bx - bw / 2 - 0.05 or r[2] > bx + bw / 2 + 0.05
+                   or r[1] < by - bh / 2 - 0.05 or r[3] > by + bh / 2 + 0.3)
+            return hits + (10 if off else 0)
+        best = min(cands, key=bad)
+        mob.move_to(best)
+        return bad(best)
+
+    # ---- steps --------------------------------------------------------------
     def apply(self, step):
         th, anims = self.th, []
         for v in step.get("visit", []) or []:
@@ -710,15 +911,17 @@ class GraphSurface:
                 anims.append(c.animate.set_stroke(th["good"], 5).set_fill(th["good"], 0.32))
             else:
                 anims.append(c.animate.set_stroke(th["accent2"], 4).set_fill(th["cell"], 1))
-        # halos around the active node(s)
         for hm in self.halos:
             anims.append(FadeOut(hm))
         self.halos = []
         for nid in active:
-            hm = Circle(radius=self.R * 1.42, stroke_width=2.5, stroke_color=th["compare"],
-                        stroke_opacity=0.7, fill_color=th["compare"], fill_opacity=0.10).move_to(self.pos[nid]).set_z_index(1)
+            if self.pills:
+                hm = RoundedRectangle(corner_radius=min(0.28, self.nh / 2 + 0.08), width=self.nw[nid] + 0.16, height=self.nh + 0.16)
+            else:
+                hm = Circle(radius=self.nh / 2 * 1.4)
+            hm.set_stroke(th["compare"], 2.5, opacity=0.7).set_fill(th["compare"], 0.10).move_to(self.pos[nid]).set_z_index(1)
             self.halos.append(hm)
-            anims.append(FadeIn(hm, scale=0.7))
+            anims.append(FadeIn(hm, scale=0.8))
         hot = set()
         for e in step.get("edge", []) or []:
             if isinstance(e, (list, tuple)) and len(e) >= 2:
@@ -742,17 +945,28 @@ class GraphSurface:
         self.used |= hot
         for nid, txt in (step.get("label", {}) or {}).items():
             nid = str(nid)
-            if nid in self.nodes:
-                t = T(str(txt)[:12], font=FONT, font_size=15, color=th["accent"])
-                target = pill(t, th, stroke=th["accent"], fill=th["bg"], pad_x=0.07, pad_y=0.03, radius=0.06)
-                target.next_to(self.ncirc[nid], UR, buff=-0.02).set_z_index(4)
-                if nid in self.labels:
-                    anims.append(FadeOut(self.labels[nid]))
-                self.labels[nid] = target
-                anims.append(FadeIn(target, scale=0.8))
+            if nid not in self.nodes:
+                continue
+            t = T(str(txt)[:16], font=FONT, font_size=15, color=th["accent"])
+            target = pill(t, th, stroke=th["accent"], fill=th["bg"], pad_x=0.08, pad_y=0.04, radius=0.06).set_z_index(4)
+            old = self.labels.pop(nid, None)
+            if self._place_label(nid, target) > 0:
+                target.scale(0.78)
+                if self._place_label(nid, target) > 0:
+                    # Nowhere free around this node: show the annotation inside
+                    # the node instead of letting it cover its neighbours.
+                    inner = T(str(txt)[:16], font=FONT, font_size=self.fs, color=th["accent"])
+                    fit_text(inner, self.nw[nid] - 0.16, self.nh - 0.12).move_to(self.pos[nid]).set_z_index(3)
+                    anims += swap(self.ntext[nid], inner)
+                    self.ntext[nid] = inner
+                    if old is not None:
+                        anims.append(FadeOut(old))
+                    continue
+            anims += swap(old, target)
+            self.labels[nid] = target
         if self.use_queue and "queue" in step and step.get("queue") is not None:
             new = self._build_queue(step.get("queue") or [])
-            anims += [FadeOut(self.queue_row), FadeIn(new)]
+            anims += swap(self.queue_row, new)
             self.queue_row = new
         return anims
 
@@ -1729,16 +1943,16 @@ class NoteCallout:
         note = str(note or "").strip()[:60]
         if note == (self.text or ""):
             return anims
-        if self.cur is not None:
-            anims.append(FadeOut(self.cur, shift=UP * 0.08))
-            self.cur = None
+        old, self.cur = self.cur, None
+        if old is not None and not note:
+            anims.append(FadeOut(old, shift=UP * 0.08))
         if note:
             t = T(note, font=TFONT, font_size=19, color=th["text"])
             fit_text(t, self.anchor[2] - 0.5)
             g = pill(t, th, stroke=th["accent"], fill=th["panel"], pad_x=0.22, pad_y=0.10, radius=0.14, opacity=0.95)
             g.move_to([self.anchor[0], self.anchor[1], 0]).set_z_index(6)
             self.cur = g
-            anims.append(FadeIn(g, shift=DOWN * 0.08))
+            anims += swap(old, g)
         self.text = note
         return anims
 
@@ -1791,7 +2005,7 @@ class VarsTracker:
         self._hot = bool(changed)
         new = self._build(changed)
         old, self.group = self.group, new
-        return ([FadeOut(old)] if old is not None else []) + [FadeIn(new)]
+        return swap(old, new)
 
 
 # ------------------------------------------------------------------- scene ----
@@ -1832,7 +2046,9 @@ class Walkthrough(Scene):
                 t.set_color(TH["c_def"])
             lg = VGroup(*t[1:])
             if len(lg) == 0:
-                lg.add(Rectangle(width=cw, height=chh, stroke_width=0, fill_opacity=0).move_to([gutter + cw / 2, -row * line_h, 0]))
+                # A point, not an invisible rectangle: line dimming sets fill
+                # opacity, which turned the rectangle into a visible square.
+                lg.add(VectorizedPoint([gutter + cw / 2, -row * line_h, 0]))
             rows.add(lg)
             nums.add(T(str(row + 1), font=FONT, font_size=fs - 3, color=th["dim"])
                      .move_to([gutter - 1.2 * cw, -row * line_h, 0], aligned_edge=RIGHT).set_opacity(0.6))
@@ -1889,9 +2105,9 @@ class Walkthrough(Scene):
             header_bottom = tradition.get_bottom()[1]
 
         # ---- content area (between header and caption strip) ----
-        cap_h = (0.95 if not PORTRAIT else 1.5) if captions else 0.35
+        cap_h = (1.05 if not PORTRAIT else 1.55) if captions else 0.35
         top = header_bottom - 0.30
-        bottom = -FH / 2 + cap_h + 0.10
+        bottom = -FH / 2 + cap_h + 0.28
         content_h = top - bottom
         content_cy = (top + bottom) / 2
 
@@ -1916,7 +2132,7 @@ class Walkthrough(Scene):
             elif has_viz:
                 # The panel gets what the code needs (within 34–52% of the frame)
                 # so one long line no longer shrinks every line to a squint.
-                region_w = min(max(code.width, FW * 0.34), FW * 0.52)
+                region_w = min(max(code.width, FW * 0.34), FW * 0.44)
                 region_h = content_h
             else:
                 region_w, region_h = FW * 0.8, content_h
@@ -2013,8 +2229,8 @@ class Walkthrough(Scene):
             txt = str(txt or "").strip()
             if not txt:
                 return VGroup()
-            limit = 70 if not PORTRAIT else 30
-            t = T(wrap_text(txt, limit), font=TFONT, font_size=20 if not PORTRAIT else 26,
+            limit = 78 if not PORTRAIT else 30
+            t = T(wrap_text(txt, limit), font=TFONT, font_size=19 if not PORTRAIT else 26,
                      color=th["text"], line_spacing=0.8)
             fit_text(t, cap_w - 0.4, cap_h - 0.25)
             g = pill(t, th, fill=th["panel"], pad_x=0.24, pad_y=0.10, radius=0.12, opacity=0.88)
@@ -2058,10 +2274,7 @@ class Walkthrough(Scene):
                 anims += tracker.update(step.get("vars"))
             if captions:
                 new_cap = make_caption(step.get("say") or step.get("caption") or "")
-                if len(caption):
-                    anims.append(FadeOut(caption, run_time=0.15))
-                if len(new_cap):
-                    anims.append(FadeIn(new_cap))
+                anims += swap(caption if len(caption) else None, new_cap if len(new_cap) else None)
                 caption = new_cap
             frac = (k + 1) / n_steps
             anims.append(prog.animate.put_start_and_end_on([-FW / 2, bar_y, 0], [-FW / 2 + FW * frac, bar_y, 0]))
