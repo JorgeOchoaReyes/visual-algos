@@ -90,9 +90,10 @@ export async function renderSpec(params: {
   orientation: Orientation;
   quality: RenderQuality;
   theme?: string;
+  captions?: boolean;
   timeoutMs?: number;
 }): Promise<RenderResult> {
-  const { id, spec, language, orientation, quality, theme = "8bit", timeoutMs = 600000 } = params;
+  const { id, spec, language, orientation, quality, theme = "8bit", captions = true, timeoutMs = 900000 } = params;
 
   const python = await resolvePythonPath();
   if (!python) return { ok: false, error: "No python interpreter found." };
@@ -107,6 +108,8 @@ export async function renderSpec(params: {
       language,
       orientation,
       theme,
+      quality,
+      captions,
       mode: spec.mode ?? "code",
       viz: spec.viz ?? "array",
       code: spec.code,
@@ -120,6 +123,12 @@ export async function renderSpec(params: {
       actors: spec.actors ?? [],
       zones: spec.zones ?? [],
       links: spec.links ?? [],
+      directed: spec.directed ?? false,
+      queueLabel: spec.queueLabel ?? null,
+      rowLabels: spec.rowLabels ?? [],
+      colLabels: spec.colLabels ?? [],
+      gridStyle: spec.gridStyle ?? "numbers",
+      takeaway: spec.takeaway ?? null,
       steps: spec.steps,
     };
     writeFileSync(join(workdir, "spec.json"), JSON.stringify(specJson), "utf-8");

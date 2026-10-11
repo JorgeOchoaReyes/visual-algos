@@ -30,7 +30,8 @@ async function duration(ffmpegExe: string, file: string): Promise<number | null>
 
 /**
  * Mux an audio track onto a video. If the narration is longer than the video,
- * the last video frame is held (tpad) so the audio isn't cut off. Re-encodes to
+ * the last video frame is held (tpad) so the audio isn't cut off; if shorter,
+ * the audio is padded with silence so the video isn't. Re-encodes to
  * H.264/AAC for broad compatibility. Returns true on success.
  */
 export async function muxAudioOntoVideo(params: {
@@ -59,11 +60,17 @@ export async function muxAudioOntoVideo(params: {
       "1:a:0",
     );
   } else {
-    args.push("-map", "0:v:0", "-map", "1:a:0", "-shortest");
+    // Pad the narration with silence to the video's length so a silent tail
+    // (the takeaway end card) isn't cut off; -shortest then ends at the video.
+    args.push("-map", "0:v:0", "-map", "1:a:0", "-af", "apad", "-shortest");
   }
   args.push(
     "-c:v",
     "libx264",
+    "-crf",
+    "18",
+    "-preset",
+    "medium",
     "-pix_fmt",
     "yuv420p",
     "-c:a",

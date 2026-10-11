@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Clock, Code2, Cpu, Gauge, Loader2, MonitorSmartphone, Palette, Play, Sparkles, Square, Volume2, Wand2, AlertCircle } from "lucide-react";
+import { BookOpen, Clock, Code2, Cpu, Gauge, Loader2, MessageSquareText, MonitorSmartphone, Palette, Play, Sparkles, Square, Volume2, Wand2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
   formatUsd,
@@ -27,9 +27,9 @@ import { Toggle } from "../components/Toggle";
 import { Dropdown } from "../components/Dropdown";
 
 const QUALITIES: { value: RenderQuality; label: string; hint: string }[] = [
-  { value: "l", label: "Fast", hint: "480p" },
-  { value: "m", label: "Balanced", hint: "720p" },
-  { value: "h", label: "High", hint: "1080p · slower" },
+  { value: "l", label: "Fast", hint: "720p" },
+  { value: "m", label: "Balanced", hint: "1080p" },
+  { value: "h", label: "High", hint: "1440p · 60fps · slower" },
 ];
 
 // Sentinels for the per-video model / voice pickers.
@@ -79,6 +79,7 @@ export function New({
   const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [length, setLength] = useState<VideoLength>("standard");
   const [narrate, setNarrate] = useState(false);
+  const [captions, setCaptions] = useState(true);
 
   // Picking a format nudges the length to a sensible default (Shorts want a
   // punchy ~15–20s; landscape wants the full walkthrough). Still overridable.
@@ -177,6 +178,7 @@ export function New({
         theme,
         register,
         narrate: narrate && hasElevenLabs,
+        captions,
         ...(chosenModel ? { model: chosenModel } : {}),
         ...(chosenVoice ? { voiceId: chosenVoice } : {}),
       });
@@ -445,6 +447,24 @@ export function New({
               Shorts play best at ~15–20s — the Short length keeps it punchy.
             </p>
           )}
+        </div>
+
+        {/* Captions */}
+        <div
+          className={`flex items-center justify-between rounded-2xl border p-4 transition ${
+            captions ? "border-accent/40 bg-accent/[0.06]" : "border-white/10 bg-white/[0.03]"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <MessageSquareText size={18} className="mt-0.5 text-accent" />
+            <div>
+              <div className="text-sm font-medium">On-screen captions</div>
+              <div className="text-xs text-white/45">
+                Show each spoken line as a subtitle, so the video reads even on mute.
+              </div>
+            </div>
+          </div>
+          <Toggle checked={captions} onChange={setCaptions} />
         </div>
 
         {/* Narration */}

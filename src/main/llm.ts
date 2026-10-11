@@ -54,7 +54,7 @@ export async function generateSpec(
   }
 }
 
-/** Ask the configured provider to fix an invalid spec. */
+/** Ask the configured provider to fix a spec (editing `previous` when given). */
 export async function repairSpec(
   llm: LlmConfig,
   topic: string,
@@ -64,10 +64,11 @@ export async function repairSpec(
   register: ConceptRegister,
   length: VideoLength = "standard",
   orientation: Orientation = "landscape",
+  previous?: GeneratedSpec,
 ): Promise<GeneratedSpec> {
-  log.info("llm", `repair via ${llm.provider}/${llm.model}`, { reason: error.slice(0, 120), length });
+  log.info("llm", `repair via ${llm.provider}/${llm.model}`, { reason: error.slice(0, 120), length, withPrevious: !!previous?.source });
   try {
-    return await client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode, register, length, orientation);
+    return await client(llm.provider).repairSpec(llm.apiKey, llm.model, topic, language, error, mode, register, length, orientation, previous);
   } catch (err) {
     log.error("llm", `repair failed (${llm.provider}/${llm.model})`, err);
     throw err;
