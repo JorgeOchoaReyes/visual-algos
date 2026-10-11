@@ -24,7 +24,7 @@ export function SetupBanner() {
           exit={{ opacity: 0, y: 24 }}
           className="fixed bottom-5 left-1/2 z-40 w-[min(92vw,560px)] -translate-x-1/2"
         >
-          <div className="rounded-2xl border border-edge bg-panel/95 p-4 shadow-pixel backdrop-blur">
+          <div className="rounded-xl border border-edge bg-panel/95 p-4 shadow-pixel backdrop-blur">
             {state.phase === "installing" ? (
               <>
                 <div className="flex items-center gap-2 text-sm font-semibold text-accent">

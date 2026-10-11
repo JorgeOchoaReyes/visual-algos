@@ -72,8 +72,8 @@ export default function App() {
           </Routes>
         </AnimatePresence>
       </main>
-      <footer className="border-t border-white/5 py-4 text-center text-xs text-white/35">
-        Vizuals · renders locally with Manim
+      <footer className="py-6 text-center text-[11px] text-white/25">
+        Vizuals · rendered locally with Manim
       </footer>
       <UpdateBanner />
       <SetupBanner />

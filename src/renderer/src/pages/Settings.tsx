@@ -50,7 +50,7 @@ function updateLabel(u: UpdateState): string {
 
 function ToolRow({ name, tool }: { name: string; tool: ToolStatus }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+    <div className="flex items-center justify-between rounded-lg border border-edge bg-white/[0.02] px-4 py-3">
       <div>
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className={`h-2 w-2 rounded-full ${tool.ok ? "bg-emerald-400" : "bg-red-400"}`} />
@@ -73,7 +73,7 @@ function ToolRow({ name, tool }: { name: string; tool: ToolStatus }) {
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Cpu; children: React.ReactNode }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold text-white/85">
+    <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
       <Icon size={16} className="text-accent" />
       {children}
     </h2>
@@ -248,33 +248,32 @@ export function SettingsPage({
     { value: CUSTOM, label: "Custom…", note: "enter a model id" },
   ];
 
-  const inputCls =
-    "w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent";
+  const inputCls = "field8 w-full px-3.5 py-2.5 text-sm placeholder:text-white/30";
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10">
+    <div className="mx-auto max-w-2xl px-6 pb-28 pt-10">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-[26px] font-semibold tracking-tight">Settings</h1>
         {version && (
-          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-0.5 font-mono text-xs text-white/55">
+          <span className="rounded-md border border-edge bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-white/50">
             v{version}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2.5">
           <span className="text-xs text-white/45">{updateLabel(update)}</span>
           {update.status === "ready" ? (
-            <button onClick={() => window.api.updates.install()} className="btn8 !py-1.5 !text-xs">
+            <button onClick={() => window.api.updates.install()} className="btn8 h-8 px-3 text-xs">
               <RefreshCw size={13} /> Restart to update
             </button>
           ) : update.status === "available" ? (
-            <button onClick={() => window.api.updates.openDownload()} className="btn8 !py-1.5 !text-xs">
+            <button onClick={() => window.api.updates.openDownload()} className="btn8 h-8 px-3 text-xs">
               <Download size={13} /> Download v{update.version ?? ""}
             </button>
           ) : (
             <button
               onClick={checkForUpdates}
               disabled={update.status === "checking" || update.status === "downloading"}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-white/70 transition hover:text-white disabled:opacity-50"
+              className="btn8 btn8--ghost h-8 px-3 text-xs"
             >
               <RefreshCw size={13} className={update.status === "checking" ? "animate-spin" : ""} />
               Check for updates
@@ -288,7 +287,7 @@ export function SettingsPage({
       </p>
 
       {/* AI provider */}
-      <section className="mt-8 space-y-4">
+      <section className="panel8 mt-8 space-y-4 p-5">
         <SectionTitle icon={KeyRound}>AI provider</SectionTitle>
         <p className="-mt-2 text-xs text-white/45">
           Where the walkthrough is written. Only the topic you type is ever sent. Keys are stored
@@ -304,7 +303,7 @@ export function SettingsPage({
           <>
             <p className="text-xs text-white/45">Get a free key at aistudio.google.com/apikey.</p>
             <div>
-              <label className="mb-1.5 block text-xs text-white/60">Gemini API key</label>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">Gemini API key</label>
               <input
                 type="password"
                 value={apiKey}
@@ -314,7 +313,7 @@ export function SettingsPage({
               />
             </div>
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-white/60">
                 <Cpu size={13} /> Model
               </label>
               <Dropdown
@@ -349,7 +348,7 @@ export function SettingsPage({
               stronger one.
             </p>
             <div>
-              <label className="mb-1.5 block text-xs text-white/60">OpenRouter API key</label>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">OpenRouter API key</label>
               <input
                 type="password"
                 value={orKey}
@@ -359,7 +358,7 @@ export function SettingsPage({
               />
             </div>
             <div>
-              <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+              <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-white/60">
                 <Cpu size={13} /> Model
               </label>
               <Dropdown
@@ -390,14 +389,14 @@ export function SettingsPage({
       </section>
 
       {/* ElevenLabs */}
-      <section className="mt-10 space-y-4">
+      <section className="panel8 mt-5 space-y-4 p-5">
         <SectionTitle icon={Volume2}>Narration (ElevenLabs)</SectionTitle>
         <p className="-mt-2 text-xs text-white/45">
           Optional. Add a key to generate a spoken voiceover and mux it into your videos. Get one
           at elevenlabs.io. Stored locally.
         </p>
         <div>
-          <label className="mb-1.5 block text-xs text-white/60">API key</label>
+          <label className="mb-1.5 block text-xs font-medium text-white/60">API key</label>
           <input
             type="password"
             value={elevenKey}
@@ -407,7 +406,7 @@ export function SettingsPage({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs text-white/60">Voice</label>
+          <label className="mb-1.5 block text-xs font-medium text-white/60">Voice</label>
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
               <Dropdown
@@ -429,7 +428,7 @@ export function SettingsPage({
               onClick={playSample}
               disabled={!elevenKey.trim() || !voiceId.trim() || sampleState === "loading"}
               title={elevenKey.trim() ? "Play a sample of this voice" : "Add an API key to preview voices"}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-white/70 transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn8 btn8--ghost h-10 w-10 shrink-0 px-0"
             >
               {sampleState === "loading" ? (
                 <Loader2 size={15} className="animate-spin" />
@@ -452,7 +451,7 @@ export function SettingsPage({
           )}
         </div>
         <div>
-          <label className="mb-1.5 flex items-center gap-1.5 text-xs text-white/60">
+          <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-white/60">
             <Cpu size={13} /> Voice model
           </label>
           <Dropdown
@@ -484,20 +483,20 @@ export function SettingsPage({
       </section>
 
       {/* Environment */}
-      <section className="mt-10 space-y-3">
+      <section className="panel8 mt-5 space-y-3 p-5">
         <div className="flex items-center justify-between">
           <SectionTitle icon={MonitorCog}>Render environment</SectionTitle>
           <div className="flex items-center gap-2">
             <button
               onClick={() => window.api.app.openLogs()}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
+              className="btn8 btn8--ghost h-7 px-3 text-xs"
               title="Open the app log file — useful when a video fails to generate"
             >
               <FileText size={12} /> Open logs
             </button>
             <button
               onClick={onRecheckEnv}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-white/60 transition hover:text-white"
+              className="btn8 btn8--ghost h-7 px-3 text-xs"
             >
               <RefreshCw size={12} /> Re-check
             </button>
@@ -516,12 +515,12 @@ export function SettingsPage({
               <ToolRow name="ffmpeg" tool={env.ffmpeg} />
             </>
           ) : (
-            <div className="h-16 animate-pulse rounded-xl border border-white/[0.06] bg-panel/60" />
+            <div className="h-16 animate-pulse rounded-lg border border-edge bg-white/[0.02]" />
           )}
         </div>
 
         <div>
-          <label className="mb-1.5 block text-xs text-white/60">
+          <label className="mb-1.5 block text-xs font-medium text-white/60">
             Python path (optional — leave blank to auto-detect)
           </label>
           <input
@@ -534,7 +533,7 @@ export function SettingsPage({
         </div>
 
         {env && env.python.ok && !env.manim.ok && (
-          <div className="rounded-xl border border-white/[0.07] bg-panel/50 p-4">
+          <div className="rounded-lg border border-edge bg-white/[0.02] p-4">
             <p className="text-sm">
               Manim isn't installed. Let the app create a managed Python environment and install it.
             </p>
@@ -548,7 +547,7 @@ export function SettingsPage({
             {log && (
               <pre
                 ref={logRef}
-                className="mt-3 max-h-56 overflow-auto rounded-lg border border-white/10 bg-[#0d1017] p-3 font-mono text-[11px] leading-relaxed text-white/70"
+                className="mt-3 max-h-56 overflow-auto rounded-lg border border-edge bg-ink/70 p-3 font-mono text-[11px] leading-relaxed text-white/70"
               >
                 {log}
               </pre>
@@ -557,15 +556,17 @@ export function SettingsPage({
         )}
       </section>
 
-      <div className="mt-10 flex items-center gap-3">
-        <button onClick={save} className="btn8">
-          Save settings
-        </button>
-        {saved && (
-          <span className="flex items-center gap-1 text-sm text-emerald-300">
-            <Check size={15} /> Saved
-          </span>
-        )}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-edge bg-ink/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-2xl items-center justify-end gap-3 px-6 py-3">
+          {saved && (
+            <span className="flex items-center gap-1 text-[13px] text-emerald-300">
+              <Check size={15} /> Saved
+            </span>
+          )}
+          <button onClick={save} className="btn8 btn8--magenta h-10 px-5">
+            Save settings
+          </button>
+        </div>
       </div>
     </div>
   );

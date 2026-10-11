@@ -50,8 +50,18 @@ that can run the app.
 
 - **Code-follows-line videos** — the algorithm's source stays on screen and the
   executing line is highlighted in sync with the data animation.
+- **Rich, data-true visuals** — per-step callouts, a live variable tracker,
+  auto-laid-out trees, directed/weighted graphs with persistent traversal and
+  path highlighting, DP grids with row/column headers (plus maze and heat
+  styles), row-by-row comparison tables, concept maps whose arrows route around
+  nodes, on-screen captions, a progress bar and a closing takeaway card.
+- **Self-checking specs** — before rendering, every step reference is
+  validated (bad indices/ids are dropped, never crash the render) and the spec
+  is linted for things that make a video *wrong* — e.g. a sort whose swaps
+  don't actually end sorted — with one targeted fix-up pass that edits the
+  model's own JSON.
 - **Local rendering** — Manim runs on your machine via the bundled runtime; no
-  servers, no per-render fees.
+  servers, no per-render fees. Fast = 720p, Balanced = 1080p, High = 1440p60.
 - **Provider + model picker** — Gemini or OpenRouter, and any model on either
   (dropdown of common ones, or enter a custom id/slug) in Settings.
 - **AI narration (optional)** — add an ElevenLabs key to generate a voiceover

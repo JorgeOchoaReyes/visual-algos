@@ -20,7 +20,7 @@ export function UpdateBanner() {
           exit={{ opacity: 0, y: 24 }}
           className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2"
         >
-          <div className="flex items-center gap-3 rounded-full border border-white/10 bg-[#151a24]/95 px-4 py-2.5 shadow-2xl shadow-black/50 backdrop-blur">
+          <div className="flex items-center gap-3 rounded-full border border-edge bg-panel/95 px-4 py-2.5 shadow-2xl shadow-black/50 backdrop-blur">
             {state.status === "downloading" ? (
               <>
                 <Download size={16} className="text-accent" />

@@ -56,6 +56,8 @@ export interface SpecStep {
   line: number; // 1-based index into code
   say: string; // spoken line for this step (also the caption); drives its timing
   dur?: number; // exact seconds for this step (filled by the audio pass)
+  note?: string; // short on-screen callout for this beat ("38 > 27 → swap")
+  vars?: Record<string, string>; // live variable values that changed this step
   // array / linkedlist:
   compare?: number[];
   swap?: [number, number];
@@ -70,6 +72,7 @@ export interface SpecStep {
   edge?: [string, string][];
   label?: Record<string, string>;
   queue?: string[];
+  path?: string[]; // highlight a final path through these node ids
   // grid:
   gcompare?: [number, number][];
   gset?: [number, number, number][];
@@ -112,7 +115,15 @@ export interface GeneratedSpec {
   actors?: ConceptActor[];
   zones?: ConceptZone[];
   links?: [string, string][]; // initial ties
+  directed?: boolean; // graph: draw arrowheads
+  queueLabel?: string; // graph: name of the frontier row ("queue", "stack", "heap")
+  rowLabels?: string[]; // grid: row headers
+  colLabels?: string[]; // grid: column headers
+  gridStyle?: "numbers" | "heat" | "maze";
+  takeaway?: string; // closing end-card sentence
   steps: SpecStep[];
+  /** The model's raw JSON, kept so a repair can edit it instead of starting over. */
+  source?: string;
 }
 
 export const SYSTEM_INSTRUCTION = `You explain ANY topic as a short, precise, step-by-step animation. You DO NOT
@@ -156,8 +167,9 @@ MUST use viz "graph"/"tree" with real "nodes" and "edges". NEVER encode a graph
 as an array/adjacency-matrix of bars. Same for grids and linked lists.
 
 PANEL RULES
-- mode "code": the "code" array is COMPLETE, correct, runnable code (6–20 short
-  lines). NEVER stub or hide logic behind a placeholder or an unshown helper (no
+- mode "code": the "code" array is COMPLETE, correct, runnable code (6–16 short
+  lines, each under ~60 characters). Show the ONE function the video is about,
+  not the whole class. NEVER stub or hide logic behind a placeholder or an unshown helper (no
   "_merge(...) # complex"): write the full body so a viewer sees how it works.
 - mode "concept": the "code" array is 5–12 SHORT bullet points in plain language
   (a phrase each, not code). Each step highlights one point as the narrator
@@ -196,10 +208,53 @@ DATA + STEP FIELDS BY viz:
   cells it is talking about with gcompare:[[r,c]], and gdone:[[r,c]] settles a
   row once explained. Example first data step: gcompare:[[1,1],[1,2]].
 
+RICH VISUALS — the renderer supports these; use them, they make the video:
+- "note" (per step, optional, <= 32 chars): an on-screen callout of the key
+  fact of that beat: "38 > 27 → swap", "dist[C] = 4", "mid = 5", "found!".
+  Use it on the important beats (about every other step), not on every step.
+- "vars" (per step, optional): live values of the algorithm's key variables
+  as [{name, value}] (lo/hi/mid, i/j, sum, best, count). List only the ones
+  that CHANGED this step; earlier values stay on screen.
+- "takeaway" (top level): one memorable closing sentence (<= 90 chars) shown
+  on the end card, e.g. "Halving the search space each step gives O(log n)."
+- graph / tree ids: give every node a SHORT id ("a", "root", "s", "c0") and
+  put any longer display text in "label" ("Summary", "Cluster 0", "U=16").
+  Every edge "from"/"to" and every step reference must repeat an id EXACTLY.
+  Keep labels under 14 characters, and step "label" annotations under 12.
+- graph: "directed": true for directed graphs (DAGs, topological sort, flow
+  networks). Step
+  "path":[ids] highlights a final path (the shortest path, the answer). Edges
+  you list in "edge" stay tinted afterwards, so the explored part builds up.
+  "queueLabel" names the frontier row: "queue", "stack", "heap", "ready".
+- tree: the renderer lays the tree out from the edges (root on top). Still give
+  every node an x so children land on the correct side (left child x < parent
+  x < right child x) — that is what keeps a BST's left/right order.
+- grid: "rowLabels"/"colLabels" (short strings) when rows/columns stand for
+  something — the characters of the two strings in edit distance / LCS, item
+  weights in knapsack. "gridStyle":"maze" for grid pathfinding (1 = wall,
+  0 = open; gset writes distances into open cells), "heat" shades a numeric
+  matrix by value.
+
+DATA ACCURACY — the picture must be TRUE, or the video is wrong:
+- Track the real state of the data through every step. "set" values and
+  "swap"s must produce exactly the array the code would hold at that moment;
+  a sorting video must END with the array truly sorted, and "sorted" may only
+  mark indices that already hold their final value.
+- Step fields may only reference indices, node ids and cells that exist.
+- Keep the highlighted "line" moving with the logic; don't park it on one line.
+
 Return ONLY the JSON described by the schema. Fill only the fields relevant to
 the chosen viz.`;
 
 const rc = { type: "array", items: { type: "integer" } };
+const nameValues = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: { name: { type: "string" }, value: { type: "string" } },
+    required: ["name", "value"],
+  },
+};
 
 export const RESPONSE_SCHEMA = {
   type: "object",
@@ -207,16 +262,22 @@ export const RESPONSE_SCHEMA = {
     title: { type: "string" },
     description: { type: "string" },
     narration: { type: "string" },
+    takeaway: { type: "string" },
     mode: { type: "string" },
     viz: { type: "string" },
     code: { type: "array", items: { type: "string" } },
     array: { type: "array", items: { type: "integer" } },
     target: { type: "integer" },
+    directed: { type: "boolean" },
+    queueLabel: { type: "string" },
+    rowLabels: { type: "array", items: { type: "string" } },
+    colLabels: { type: "array", items: { type: "string" } },
+    gridStyle: { type: "string" },
     nodes: {
       type: "array",
       items: {
         type: "object",
-        properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" } },
+        properties: { id: { type: "string" }, x: { type: "number" }, y: { type: "number" }, label: { type: "string" } },
         required: ["id", "x", "y"],
       },
     },
@@ -237,6 +298,8 @@ export const RESPONSE_SCHEMA = {
         properties: {
           line: { type: "integer" },
           say: { type: "string" },
+          note: { type: "string" },
+          vars: nameValues,
           compare: rc,
           swap: rc,
           set: { type: "array", items: rc },
@@ -270,6 +333,7 @@ export const RESPONSE_SCHEMA = {
             },
           },
           queue: { type: "array", items: { type: "string" } },
+          path: { type: "array", items: { type: "string" } },
           gcompare: { type: "array", items: rc },
           gset: { type: "array", items: rc },
           gdone: { type: "array", items: rc },
@@ -373,6 +437,11 @@ STEP RULES
   diagram shows and "say" narrates.
 - Also give an overall "narration" (the say lines joined), a "title" (the
   concept's name) and a one-sentence "description".
+- "note" (per step, optional, <= 32 chars): an on-screen callout naming the
+  key term or turn of that beat ("Enclosure Acts", "the commodity form"). Use
+  it on the pivotal beats, not every step.
+- "takeaway" (top level): one memorable closing sentence (<= 90 chars) for the
+  end card — the thesis of the account in plain words.
 
 WORKED EXAMPLE (concept MAP) — topic "Kant's ethics":
 {"title":"Kant's Metaphysics of Morals","tradition":"Kant, Groundwork (1785)",
@@ -445,6 +514,7 @@ export const CONCEPT_RESPONSE_SCHEMA = {
     title: { type: "string" },
     description: { type: "string" },
     narration: { type: "string" },
+    takeaway: { type: "string" },
     viz: { type: "string" },
     tradition: { type: "string" },
     code: { type: "array", items: { type: "string" } },
@@ -491,6 +561,7 @@ export const CONCEPT_RESPONSE_SCHEMA = {
         properties: {
           line: { type: "integer" },
           say: { type: "string" },
+          note: { type: "string" },
           move: {
             type: "array",
             items: {
@@ -640,6 +711,9 @@ export function buildUserPrompt(
   return `Topic: ${topic}\nLanguage for the on-screen code: ${language}\n\n${pacing}\n\nProduce the walkthrough JSON now.`;
 }
 
+/** Longest previous-JSON excerpt a repair prompt carries (keeps the call cheap). */
+const MAX_PREVIOUS_CHARS = 16000;
+
 export function buildRepairPrompt(
   topic: string,
   language: string,
@@ -647,15 +721,25 @@ export function buildRepairPrompt(
   mode: Mode,
   length: VideoLength = "standard",
   orientation: Orientation = "landscape",
+  previous?: GeneratedSpec,
 ): string {
   const what = mode === "concept" ? `The previous concept JSON for "${topic}"` : `The previous walkthrough JSON for "${topic}" (language ${language})`;
+  const prior = previous?.source && previous.source.length <= MAX_PREVIOUS_CHARS ? previous.source : null;
   return [
-    `${what} was invalid:`,
+    `${what} has problems:`,
     error,
     "",
+    ...(prior
+      ? [
+          "Here is that JSON. Fix the problems above by editing it — keep what already",
+          "works (topic framing, layout, good steps) rather than starting over:",
+          prior,
+          "",
+        ]
+      : []),
     pacingDirective(length, orientation),
     "",
-    "Return a corrected, complete walkthrough JSON that fixes this and keeps the pacing above.",
+    "Return the corrected, complete walkthrough JSON that fixes this and keeps the pacing above.",
   ].join("\n");
 }
 
@@ -847,9 +931,23 @@ export function normalizeSpec(
     const link = parseIdPairs(s.link);
     const unlink = parseIdPairs(s.unlink);
 
+    const vars: Record<string, string> = {};
+    if (Array.isArray(s.vars)) {
+      for (const v of s.vars as Record<string, unknown>[]) {
+        if (v && v.name != null && v.value != null) vars[String(v.name).slice(0, 10)] = String(v.value).slice(0, 14);
+      }
+    } else if (s.vars && typeof s.vars === "object") {
+      for (const [k, v] of Object.entries(s.vars as Record<string, unknown>)) {
+        if (v != null) vars[k.slice(0, 10)] = String(v).slice(0, 14);
+      }
+    }
+    const note = typeof s.note === "string" && s.note.trim() ? s.note.trim().slice(0, 48) : undefined;
+
     return {
       line: Math.min(Math.max(1, Number(s.line) || 1), Math.max(1, code.length)),
       say,
+      note,
+      vars: Object.keys(vars).length ? vars : undefined,
       compare,
       swap,
       set: set.length ? set : undefined,
@@ -862,6 +960,7 @@ export function normalizeSpec(
       edge: edge.length ? edge : undefined,
       label: Object.keys(label).length ? label : undefined,
       queue: Array.isArray(s.queue) ? strArray(s.queue) : undefined,
+      path: Array.isArray(s.path) && s.path.length ? strArray(s.path) : undefined,
       gcompare: pairArray(s.gcompare),
       gset: gset.length ? gset : undefined,
       gdone: pairArray(s.gdone),
@@ -904,6 +1003,19 @@ export function normalizeSpec(
         .slice(0, 4)
     : [];
   const links = parseIdPairs(raw.links);
+  const labels = (v: unknown) => (Array.isArray(v) ? strArray(v).map((x) => x.slice(0, 4)).slice(0, 16) : []);
+  const rowLabels = labels(raw.rowLabels);
+  const colLabels = labels(raw.colLabels);
+  const gridStyle =
+    raw.gridStyle === "heat" || raw.gridStyle === "maze" || raw.gridStyle === "numbers"
+      ? (raw.gridStyle as GeneratedSpec["gridStyle"])
+      : undefined;
+  let source: string | undefined;
+  try {
+    source = JSON.stringify(raw);
+  } catch {
+    source = undefined;
+  }
 
   return {
     title: (typeof raw.title === "string" && raw.title ? raw.title : topic).slice(0, 120),
@@ -922,7 +1034,14 @@ export function normalizeSpec(
     actors: actors.length ? actors : undefined,
     zones: zones.length ? zones : undefined,
     links: links.length ? links : undefined,
+    directed: raw.directed === true || raw.directed === "true" ? true : undefined,
+    queueLabel: typeof raw.queueLabel === "string" && raw.queueLabel.trim() ? raw.queueLabel.trim().slice(0, 12) : undefined,
+    rowLabels: rowLabels.length ? rowLabels : undefined,
+    colLabels: colLabels.length ? colLabels : undefined,
+    gridStyle,
+    takeaway: typeof raw.takeaway === "string" && raw.takeaway.trim() ? raw.takeaway.trim().slice(0, 140) : undefined,
     steps,
+    source,
   };
 }
 
@@ -945,6 +1064,7 @@ function stepMoves(s: SpecStep): boolean {
     (s.edge && s.edge.length) ||
     (s.label && Object.keys(s.label).length) ||
     (s.queue && s.queue.length) ||
+    (s.path && s.path.length) ||
     (s.gcompare && s.gcompare.length) ||
     (s.gset && s.gset.length) ||
     (s.gdone && s.gdone.length) ||
@@ -1065,4 +1185,168 @@ export function vizChangesEnough(spec: GeneratedSpec): Validated {
     return { ok: false, reason: "Most steps are missing a spoken 'say' line." };
   }
   return { ok: true };
+}
+
+/**
+ * Drop step references the renderer can't draw (out-of-range indices, unknown
+ * node ids, cells off the grid) so a slightly-off spec still renders cleanly
+ * instead of silently doing nothing or crashing. Returns the cleaned spec and
+ * how many references were dropped (a quality signal for the repair pass).
+ */
+export function sanitizeSpec(spec: GeneratedSpec): { spec: GeneratedSpec; dropped: number } {
+  let dropped = 0;
+  const keep = <T,>(xs: T[] | undefined, ok: (x: T) => boolean): T[] | undefined => {
+    if (!xs) return xs;
+    const out = xs.filter(ok);
+    dropped += xs.length - out.length;
+    return out;
+  };
+  const viz = spec.viz;
+  let nodes = spec.nodes;
+  let edges = spec.edges;
+  if (nodes) {
+    const seen = new Set<string>();
+    nodes = nodes.filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true)));
+  }
+  const ids = new Set((nodes ?? []).map((n) => n.id));
+  if (edges && (viz === "graph" || viz === "tree" || viz === "map")) {
+    const seenE = new Set<string>();
+    const before = edges.length;
+    edges = edges.filter((e) => {
+      const a = String(e[0]);
+      const b = String(e[1]);
+      const k = `${a}\u0000${b}`;
+      if (!ids.has(a) || !ids.has(b) || a === b || seenE.has(k)) return false;
+      seenE.add(k);
+      return true;
+    });
+    dropped += before - edges.length;
+  }
+  const n = spec.array.length;
+  const inArr = (i: number) => Number.isInteger(i) && i >= 0 && i < n;
+  const rows = viz === "table" ? spec.table?.length ?? 0 : spec.grid?.length ?? 0;
+  const cols = viz === "table" ? spec.table?.[0]?.length ?? 0 : Math.max(0, ...(spec.grid ?? []).map((r) => r.length));
+  const inGrid = (rc: number[]) => rc[0] >= 0 && rc[0] < rows && rc[1] >= 0 && rc[1] < cols;
+
+  const steps = spec.steps.map((st) => {
+    const s: SpecStep = { ...st };
+    if (viz === "array" || viz === "linkedlist") {
+      s.compare = keep(s.compare, inArr);
+      s.sorted = keep(s.sorted, inArr);
+      s.set = keep(s.set, (p) => inArr(p[0]));
+      if (s.swap && !(inArr(s.swap[0]) && inArr(s.swap[1]) && s.swap[0] !== s.swap[1])) {
+        s.swap = undefined;
+        dropped += 1;
+      }
+      if (s.range) {
+        const lo = Math.max(0, Math.min(n, s.range[0]));
+        const hi = Math.max(0, Math.min(n, s.range[1]));
+        s.range = hi > lo ? [lo, hi] : undefined;
+      }
+      if (s.pointers) {
+        const p: Record<string, number> = {};
+        for (const [k, v] of Object.entries(s.pointers)) {
+          if (inArr(v)) p[k] = v;
+          else dropped += 1;
+        }
+        s.pointers = p;
+      }
+      if (s.found != null && !inArr(s.found)) {
+        s.found = null;
+        dropped += 1;
+      }
+    } else if (viz === "graph" || viz === "tree" || viz === "map") {
+      const has = (x: string) => ids.has(x);
+      s.active = keep(s.active, has);
+      s.visit = keep(s.visit, has);
+      s.path = keep(s.path, has);
+      s.edge = keep(s.edge, (e) => has(e[0]) && has(e[1]));
+      if (s.label) {
+        const l: Record<string, string> = {};
+        for (const [k, v] of Object.entries(s.label)) {
+          if (has(k)) l[k] = v;
+          else dropped += 1;
+        }
+        s.label = Object.keys(l).length ? l : undefined;
+      }
+    } else if (viz === "grid" || viz === "table") {
+      s.gcompare = keep(s.gcompare, inGrid);
+      s.gdone = keep(s.gdone, inGrid);
+      s.gpath = keep(s.gpath, inGrid);
+      s.gset = keep(s.gset, (t) => inGrid(t));
+    }
+    return s;
+  });
+  return { spec: { ...spec, nodes, edges, steps }, dropped };
+}
+
+/**
+ * Semantic quality problems a valid spec can still have — the kind that make a
+ * video look wrong rather than fail to render. Each entry is phrased as an
+ * instruction for the repair prompt. Empty = no known problems.
+ */
+export function qualityIssues(spec: GeneratedSpec, dropped = 0): string[] {
+  const issues: string[] = [];
+  const soft = vizChangesEnough(spec);
+  if (!soft.ok && soft.reason) issues.push(soft.reason);
+
+  if (dropped > Math.max(2, spec.steps.length * 0.25)) {
+    issues.push(
+      `${dropped} step references point at indices, node ids or cells that don't exist — every reference must match the data you defined.`,
+    );
+  }
+
+  // Replay the array operations: a "sorted" result must actually be sorted.
+  if (spec.viz === "array" && spec.array.length >= 2) {
+    const a = [...spec.array];
+    const n = a.length;
+    const marked = new Set<number>();
+    for (const s of spec.steps) {
+      if (s.set) for (const [i, v] of s.set) if (i >= 0 && i < n) a[i] = v;
+      if (s.swap) {
+        const [i, j] = s.swap;
+        if (i >= 0 && j >= 0 && i < n && j < n) [a[i], a[j]] = [a[j], a[i]];
+      }
+      for (const i of s.sorted ?? []) marked.add(i);
+    }
+    const asc = a.every((v, i) => i === 0 || a[i - 1] <= v);
+    const desc = a.every((v, i) => i === 0 || a[i - 1] >= v);
+    if (marked.size >= n && !asc && !desc) {
+      issues.push(
+        `Every index is marked sorted, but replaying your swap/set operations leaves the array as [${a.join(", ")}] — not sorted. ` +
+          "Each swap and set must reflect exactly what the code does to the array.",
+      );
+    }
+  }
+
+  // A tree needs its edges (they drive the layout); ids must match exactly.
+  if (spec.viz === "tree" && (spec.nodes?.length ?? 0) >= 3) {
+    const n = spec.nodes!.length;
+    const e = spec.edges?.length ?? 0;
+    if (e < n - 1) {
+      issues.push(
+        `The tree has ${n} nodes but only ${e} valid edges — every non-root node needs an edge from its parent, ` +
+          'and edge "from"/"to" must be EXACT node ids (use short ids like "root", "s", "c0" and put display text in "label").',
+      );
+    }
+  }
+  if ((spec.viz === "graph" || spec.viz === "map") && (spec.nodes?.length ?? 0) >= 3 && (spec.edges?.length ?? 0) === 0) {
+    issues.push('The graph has no valid edges — edge "from"/"to" must be EXACT node ids.');
+  }
+
+  // Long code next to a diagram crowds the frame.
+  if (spec.mode === "code" && spec.viz !== "none" && spec.code.length > 18) {
+    issues.push(
+      `The code is ${spec.code.length} lines; keep it to at most 16 short lines (the essential function only) so the diagram has room.`,
+    );
+  }
+
+  // The panel highlight should follow the logic, not sit on one line.
+  if (spec.mode === "code" && spec.code.length >= 4 && spec.steps.length >= 6) {
+    const lines = new Set(spec.steps.map((s) => s.line));
+    if (lines.size < 3) {
+      issues.push("The highlighted code line barely moves — point each step's \"line\" at the code that step executes.");
+    }
+  }
+  return issues;
 }

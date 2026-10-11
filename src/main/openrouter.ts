@@ -157,6 +157,7 @@ export async function repairSpec(
   register: ConceptRegister,
   length: VideoLength = "standard",
   orientation: Orientation = "landscape",
+  previous?: GeneratedSpec,
 ): Promise<GeneratedSpec> {
-  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode, length, orientation), topic, mode, register);
+  return chatAndParse(apiKey, modelName, buildRepairPrompt(topic, language, error, mode, length, orientation, previous), topic, mode, register);
 }

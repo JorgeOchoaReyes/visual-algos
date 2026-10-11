@@ -38,7 +38,7 @@ export function Dropdown({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-left text-sm transition hover:border-white/20"
+        className="field8 flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm"
       >
         <span className={selected ? "text-white" : "text-white/40"}>
           {selected ? selected.label : placeholder}
@@ -56,7 +56,7 @@ export function Dropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.14 }}
-            className="absolute z-30 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-white/10 bg-[#151a24] p-1 shadow-2xl shadow-black/50"
+            className="absolute z-30 mt-1.5 max-h-72 w-full overflow-auto rounded-xl border border-edge bg-[#181a21] p-1 shadow-2xl shadow-black/60"
           >
             {options.map((o) => {
               const active = o.value === value;

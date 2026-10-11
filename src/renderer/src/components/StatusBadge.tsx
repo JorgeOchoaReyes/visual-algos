@@ -16,12 +16,12 @@ export function StatusBadge({ status }: { status: VisualizationStatus }) {
   const { cls, Icon } = CONFIG[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${cls}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}
     >
       {inProgress ? (
-        <Loader2 size={13} className="animate-spin" />
+        <Loader2 size={12} className="animate-spin" />
       ) : (
-        <Icon size={13} />
+        <Icon size={12} />
       )}
       {STATUS_LABELS[status]}
     </span>

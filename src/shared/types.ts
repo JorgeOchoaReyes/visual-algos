@@ -96,6 +96,8 @@ export interface Visualization {
   narrate: boolean;
   /** True once narration audio was synthesized and muxed into the video. */
   hasAudio: boolean;
+  /** Burn each step's spoken line into the video as a caption (default true). */
+  captions: boolean;
   /** Non-fatal note (e.g. why narration didn't attach). */
   note: string | null;
   error: string | null;
@@ -108,6 +110,8 @@ export interface CreateVisualizationInput {
   quality: RenderQuality;
   /** Generate + mux an ElevenLabs voiceover (requires an ElevenLabs key). */
   narrate?: boolean;
+  /** Show each step's spoken line as an on-screen caption (default true). */
+  captions?: boolean;
   /** Programming language for the on-screen code (default python). */
   language?: string;
   /** Video aspect (default landscape). */

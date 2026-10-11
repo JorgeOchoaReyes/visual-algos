@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BookOpen, Clock, Code2, Cpu, Gauge, Loader2, MonitorSmartphone, Palette, Play, Sparkles, Square, Volume2, Wand2, AlertCircle } from "lucide-react";
+import { ChevronDown, Clock, Code2, Cpu, Gauge, Loader2, MessageSquareText, MonitorSmartphone, Palette, Play, SlidersHorizontal, Sparkles, Square, Volume2, AlertCircle } from "lucide-react";
 import {
   estimateVideoCost,
   formatUsd,
@@ -27,9 +27,9 @@ import { Toggle } from "../components/Toggle";
 import { Dropdown } from "../components/Dropdown";
 
 const QUALITIES: { value: RenderQuality; label: string; hint: string }[] = [
-  { value: "l", label: "Fast", hint: "480p" },
-  { value: "m", label: "Balanced", hint: "720p" },
-  { value: "h", label: "High", hint: "1080p · slower" },
+  { value: "l", label: "Fast", hint: "720p" },
+  { value: "m", label: "Balanced", hint: "1080p" },
+  { value: "h", label: "High", hint: "1440p · 60fps" },
 ];
 
 // Sentinels for the per-video model / voice pickers.
@@ -79,6 +79,7 @@ export function New({
   const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [length, setLength] = useState<VideoLength>("standard");
   const [narrate, setNarrate] = useState(false);
+  const [captions, setCaptions] = useState(true);
 
   // Picking a format nudges the length to a sensible default (Shorts want a
   // punchy ~15–20s; landscape wants the full walkthrough). Still overridable.
@@ -177,6 +178,7 @@ export function New({
         theme,
         register,
         narrate: narrate && hasElevenLabs,
+        captions,
         ...(chosenModel ? { model: chosenModel } : {}),
         ...(chosenVoice ? { voiceId: chosenVoice } : {}),
       });
@@ -187,101 +189,46 @@ export function New({
     }
   }
 
+  const est = estimateVideoCost(provider, chosenModel || model, narrate && hasElevenLabs);
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <div className="mb-1 flex items-center gap-2">
-        <Wand2 size={20} className="text-accent" />
-        <h1 className="text-2xl font-semibold tracking-tight">New video</h1>
-      </div>
-      <p className="mt-1 text-sm text-white/55">
+    <div className="mx-auto max-w-3xl px-6 pb-28 pt-10">
+      <h1 className="text-[26px] font-semibold tracking-tight">New video</h1>
+      <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-white/55">
         {mode === "concept"
-          ? "Name an abstract concept — from social theory, political economy, philosophy. The video animates the mechanism step by step, in sync with the argument."
-          : "Describe a computer-science concept. The video shows the algorithm's code and highlights each line as it runs, in sync with the visual."}
+          ? "Name an abstract idea and Vizuals animates its mechanism step by step, in sync with the argument."
+          : "Describe an algorithm or CS idea. The code stays on screen and each line lights up as the visual runs."}
       </p>
 
       {!canGenerate && (
-        <div className="mt-6 flex gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm">
-          <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-300" />
-          <div>
-            <p className="font-medium text-amber-200">Setup needed before you can generate</p>
-            <ul className="mt-1.5 list-inside list-disc space-y-1 text-amber-100/80">
-              {!hasKey && <li>Add your {providerLabel(provider)} API key.</li>}
-              {env && !env.python.ok && <li>Python 3.10+ was not found.</li>}
-              {env && env.python.ok && !env.manim.ok && <li>Manim is not installed.</li>}
-            </ul>
-            <Link
-              to="/settings"
-              className="mt-3 inline-block rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-300"
-            >
-              Open Settings
-            </Link>
+        <div className="mt-6 flex items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 text-sm">
+          <AlertCircle size={17} className="shrink-0 text-amber-300" />
+          <div className="flex-1 text-amber-100/85">
+            {!hasKey
+              ? `Add your ${providerLabel(provider)} API key to start generating.`
+              : env && !env.python.ok
+                ? "Python 3.10+ was not found."
+                : env && !env.manim.ok
+                  ? "Manim is not installed yet."
+                  : "Finish setup to start generating."}
           </div>
+          <Link to="/settings" className="btn8 btn8--ghost h-8 px-3 text-xs">
+            Open Settings
+          </Link>
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-7">
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-            <BookOpen size={15} /> Mode
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {MODES.map((m) => (
-              <button
-                type="button"
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className={`relative rounded-2xl border px-3 py-2.5 text-left transition ${
-                  mode === m.id
-                    ? "border-accent bg-accent/10"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                }`}
-              >
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  {m.label}
-                  {m.badge && (
-                    <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-black">
-                      {m.badge}
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-white/45">{m.hint}</div>
-              </button>
-            ))}
+      <form id="new-video" onSubmit={onSubmit} className="mt-7 space-y-5">
+        {/* ---- What ---- */}
+        <section className="panel8 p-5">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <h2 className="text-[15px] font-semibold">What should it explain?</h2>
+            <Segmented
+              value={mode}
+              onChange={(v) => setMode(v as Mode)}
+              options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+            />
           </div>
-        </div>
-
-        {mode === "concept" && (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-white/80">Symbolic language</label>
-            <div className="grid grid-cols-2 gap-2">
-              {REGISTERS.map((r) => (
-                <button
-                  type="button"
-                  key={r.id}
-                  onClick={() => setRegister(r.id)}
-                  className={`rounded-2xl border px-3 py-2.5 text-left transition ${
-                    register === r.id
-                      ? "border-accent bg-accent/10"
-                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                  }`}
-                >
-                  <div className="text-sm font-medium">{r.label}</div>
-                  <div className="text-xs text-white/45">{r.hint}</div>
-                </button>
-              ))}
-            </div>
-            {register === "glyphs" && (
-              <p className="mt-2 text-xs text-white/45">
-                The concept is parsed into a fixed lexicon — life, death, war, power, flow —
-                and each motif always gets the same glyph. One symbolic language across your
-                library; the layout stays free per concept.
-              </p>
-            )}
-          </div>
-        )}
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-white/80">Topic</label>
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
@@ -290,269 +237,360 @@ export function New({
             placeholder={
               mode === "concept"
                 ? "e.g. Primitive accumulation — enclosure of the commons, as told by Marx"
-                : "e.g. Visualize how merge sort recursively splits and merges an array"
+                : "e.g. How merge sort recursively splits and merges an array"
             }
-            className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm outline-none transition placeholder:text-white/30 focus:border-accent focus:bg-white/[0.05]"
+            className="field8 w-full resize-none px-4 py-3 text-[14px] leading-relaxed placeholder:text-white/30"
           />
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {(mode === "concept" ? CONCEPT_EXAMPLES : EXAMPLES).map((e) => (
               <button
                 type="button"
                 key={e}
                 onClick={() => setTopic(e)}
-                className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/60 transition hover:border-accent/50 hover:text-white"
+                className="rounded-full border border-edge bg-white/[0.02] px-3 py-1 text-xs text-white/60 transition hover:border-white/25 hover:text-white"
               >
                 {e}
               </button>
             ))}
           </div>
-        </div>
-
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-            <Gauge size={15} /> Quality
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            {QUALITIES.map((q) => (
-              <button
-                type="button"
-                key={q.value}
-                onClick={() => setQuality(q.value)}
-                className={`rounded-2xl border px-3 py-2.5 text-left transition ${
-                  quality === q.value
-                    ? "border-accent bg-accent/10"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                }`}
-              >
-                <div className="text-sm font-medium">{q.label}</div>
-                <div className="text-xs text-white/45">{q.hint}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-            <Palette size={15} /> Theme
-          </label>
-          <div className="grid grid-cols-4 gap-2">
-            {VIDEO_THEMES.map((t) => (
-              <button
-                type="button"
-                key={t.id}
-                onClick={() => setTheme(t.id)}
-                className={`rounded-2xl border px-3 py-2.5 text-left transition ${
-                  theme === t.id
-                    ? "border-accent bg-accent/10"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                }`}
-              >
-                <div className="text-sm font-medium">{t.label}</div>
-                <div className="text-xs text-white/45">{t.hint}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-            <Cpu size={15} /> Model
-            <span className="font-normal text-white/40">· {providerLabel(provider)}</span>
-          </label>
-          <Dropdown
-            value={modelSel}
-            options={modelOptions}
-            onChange={(v) => {
-              setModelSel(v);
-              if (v !== CUSTOM_OPT) setCustomModel("");
-            }}
-          />
-          {modelSel === CUSTOM_OPT && (
-            <input
-              type="text"
-              value={customModel}
-              onChange={(e) => setCustomModel(e.target.value)}
-              placeholder={provider === "openrouter" ? "e.g. anthropic/claude-sonnet-4" : "e.g. gemini-2.5-pro"}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent"
-            />
+          {mode === "concept" && (
+            <div className="mt-5 border-t border-edge pt-4">
+              <div className="label8">Symbolic language</div>
+              <Tiles
+                value={register}
+                onChange={(v) => setRegister(v as ConceptRegister)}
+                options={REGISTERS.map((r) => ({ value: r.id, label: r.label, hint: r.hint }))}
+                cols={2}
+              />
+              {register === "glyphs" && (
+                <p className="mt-2 text-xs leading-relaxed text-white/45">
+                  The concept is parsed into a fixed lexicon — life, death, war, power, flow — and
+                  each motif always gets the same glyph, so your whole library shares one symbolic
+                  language.
+                </p>
+              )}
+            </div>
           )}
-          <p className="mt-1.5 text-xs text-white/40">
-            Just for this video — the default comes from Settings. Stronger models write better
-            specs; faster ones cost less.
-          </p>
-        </div>
+        </section>
 
-        <div className={mode === "concept" ? "" : "grid grid-cols-2 gap-4"}>
-          {mode !== "concept" && (
+        {/* ---- Look ---- */}
+        <section className="panel8 space-y-5 p-5">
+          <h2 className="text-[15px] font-semibold">Look &amp; length</h2>
+          <div>
+            <div className="label8">
+              <Palette size={14} /> Theme
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {VIDEO_THEMES.map((t) => {
+                const sw = THEME_SWATCHES[t.id];
+                const on = theme === t.id;
+                return (
+                  <button
+                    type="button"
+                    key={t.id}
+                    onClick={() => setTheme(t.id)}
+                    className={`overflow-hidden rounded-lg border text-left transition ${
+                      on ? "border-accent ring-2 ring-accent/25" : "border-edge hover:border-white/25"
+                    }`}
+                  >
+                    <div className="flex h-12 items-end gap-1 px-2.5 pb-2" style={{ background: sw.bg }}>
+                      {sw.marks.map((c, i) => (
+                        <span key={i} className="w-2 rounded-sm" style={{ background: c, height: `${12 + i * 7}px` }} />
+                      ))}
+                    </div>
+                    <div className="px-2.5 py-2">
+                      <div className="text-[13px] font-medium">{t.label}</div>
+                      <div className="truncate text-[11px] text-white/45">{t.hint}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-                <Code2 size={15} /> Language
-              </label>
-              <Dropdown
-                value={language}
-                options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))}
-                onChange={setLanguage}
+              <div className="label8">
+                <MonitorSmartphone size={14} /> Format
+              </div>
+              <Tiles
+                value={orientation}
+                onChange={(v) => pickOrientation(v as Orientation)}
+                options={ORIENTATIONS.map((o) => ({ value: o.id, label: o.label, hint: o.hint }))}
+                cols={2}
               />
             </div>
-          )}
-          <div>
-            <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-              <MonitorSmartphone size={15} /> Format
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {ORIENTATIONS.map((o) => (
-                <button
-                  type="button"
-                  key={o.id}
-                  onClick={() => pickOrientation(o.id)}
-                  className={`rounded-2xl border px-3 py-2.5 text-left transition ${
-                    orientation === o.id
-                      ? "border-accent bg-accent/10"
-                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                  }`}
-                >
-                  <div className="text-sm font-medium">{o.label}</div>
-                  <div className="text-xs text-white/45">{o.hint}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-            <Clock size={15} /> Length
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            {VIDEO_LENGTHS.map((l) => (
-              <button
-                type="button"
-                key={l.id}
-                onClick={() => setLength(l.id)}
-                className={`rounded-2xl border px-3 py-2.5 text-left transition ${
-                  length === l.id
-                    ? "border-accent bg-accent/10"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/20"
-                }`}
-              >
-                <div className="text-sm font-medium">{l.label}</div>
-                <div className="text-xs text-white/45">{l.hint}</div>
-              </button>
-            ))}
-          </div>
-          {orientation === "portrait" && length !== "short" && (
-            <p className="mt-2 text-xs text-amber-300/80">
-              Shorts play best at ~15–20s — the Short length keeps it punchy.
-            </p>
-          )}
-        </div>
-
-        {/* Narration */}
-        <div
-          className={`flex items-center justify-between rounded-2xl border p-4 transition ${
-            narrate && hasElevenLabs ? "border-accent/40 bg-accent/[0.06]" : "border-white/10 bg-white/[0.03]"
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <Volume2 size={18} className="mt-0.5 text-accent" />
             <div>
-              <div className="text-sm font-medium">AI narration</div>
-              <div className="text-xs text-white/45">
-                {hasElevenLabs
-                  ? "Generate an ElevenLabs voiceover and add it to the video."
-                  : "Add an ElevenLabs API key in Settings to enable."}
+              <div className="label8">
+                <Gauge size={14} /> Quality
               </div>
+              <Tiles
+                value={quality}
+                onChange={(v) => setQuality(v as RenderQuality)}
+                options={QUALITIES.map((q) => ({ value: q.value, label: q.label, hint: q.hint }))}
+                cols={3}
+              />
             </div>
           </div>
-          <Toggle
+          <div>
+            <div className="label8">
+              <Clock size={14} /> Length
+            </div>
+            <Tiles
+              value={length}
+              onChange={(v) => setLength(v as VideoLength)}
+              options={VIDEO_LENGTHS.map((l) => ({ value: l.id, label: l.label, hint: l.hint }))}
+              cols={3}
+            />
+            {orientation === "portrait" && length !== "short" && (
+              <p className="mt-2 text-xs text-amber-300/80">
+                Shorts play best at ~15–20s — the Short length keeps it punchy.
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* ---- Audio ---- */}
+        <section className="panel8 divide-y divide-edge">
+          <ToggleRow
+            icon={<MessageSquareText size={17} />}
+            title="On-screen captions"
+            hint="Show each spoken line as a subtitle, so the video reads even on mute."
+            checked={captions}
+            onChange={setCaptions}
+          />
+          <ToggleRow
+            icon={<Volume2 size={17} />}
+            title="AI narration"
+            hint={
+              hasElevenLabs
+                ? "Generate an ElevenLabs voiceover, timed to each step."
+                : "Add an ElevenLabs API key in Settings to enable."
+            }
             checked={narrate && hasElevenLabs}
             onChange={setNarrate}
             disabled={!hasElevenLabs}
           />
-        </div>
+          {narrate && hasElevenLabs && (
+            <div className="px-5 py-4">
+              <div className="label8">Voice</div>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Dropdown
+                    value={voiceSel}
+                    options={voiceOptions}
+                    onChange={(v) => {
+                      setVoiceSel(v);
+                      if (v !== CUSTOM_OPT) setCustomVoice("");
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={playSample}
+                  disabled={!previewVoiceId || sampleState === "loading"}
+                  title="Play a sample of this voice"
+                  className="btn8 btn8--ghost h-10 w-10 shrink-0 px-0"
+                >
+                  {sampleState === "loading" ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : sampleState === "playing" ? (
+                    <Square size={13} />
+                  ) : (
+                    <Play size={15} />
+                  )}
+                </button>
+              </div>
+              {voiceSel === CUSTOM_OPT && (
+                <input
+                  type="text"
+                  value={customVoice}
+                  onChange={(e) => setCustomVoice(e.target.value)}
+                  placeholder="ElevenLabs voice id"
+                  className="field8 mt-2 w-full px-3.5 py-2.5 text-sm"
+                />
+              )}
+              {sampleError && <p className="mt-1.5 text-xs text-red-300">{sampleError}</p>}
+            </div>
+          )}
+        </section>
 
-        {narrate && hasElevenLabs && (
-          <div>
-            <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-white/80">
-              <Volume2 size={15} /> Voice
-            </label>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
+        {/* ---- Advanced ---- */}
+        <details className="panel8 group">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-[14px] font-medium text-white/80 marker:hidden">
+            <span className="flex items-center gap-2">
+              <SlidersHorizontal size={15} className="text-white/50" /> Advanced
+              <span className="text-xs font-normal text-white/40">
+                {chosenModel || "default model"}
+                {mode !== "concept" ? ` · ${LANGUAGES.find((l) => l.id === language)?.label ?? language}` : ""}
+              </span>
+            </span>
+            <ChevronDown size={16} className="text-white/40 transition group-open:rotate-180" />
+          </summary>
+          <div className={`grid gap-5 border-t border-edge px-5 py-4 ${mode !== "concept" ? "sm:grid-cols-2" : ""}`}>
+            <div>
+              <div className="label8">
+                <Cpu size={14} /> Model <span className="font-normal text-white/40">· {providerLabel(provider)}</span>
+              </div>
+              <Dropdown
+                value={modelSel}
+                options={modelOptions}
+                onChange={(v) => {
+                  setModelSel(v);
+                  if (v !== CUSTOM_OPT) setCustomModel("");
+                }}
+              />
+              {modelSel === CUSTOM_OPT && (
+                <input
+                  type="text"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder={provider === "openrouter" ? "e.g. anthropic/claude-sonnet-4" : "e.g. gemini-2.5-pro"}
+                  className="field8 mt-2 w-full px-3.5 py-2.5 text-sm"
+                />
+              )}
+              <p className="mt-1.5 text-xs text-white/40">
+                Just for this video. Stronger models write better specs; faster ones cost less.
+              </p>
+            </div>
+            {mode !== "concept" && (
+              <div>
+                <div className="label8">
+                  <Code2 size={14} /> Code language
+                </div>
                 <Dropdown
-                  value={voiceSel}
-                  options={voiceOptions}
-                  onChange={(v) => {
-                    setVoiceSel(v);
-                    if (v !== CUSTOM_OPT) setCustomVoice("");
-                  }}
+                  value={language}
+                  options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))}
+                  onChange={setLanguage}
                 />
               </div>
-              <button
-                type="button"
-                onClick={playSample}
-                disabled={!previewVoiceId || sampleState === "loading"}
-                title="Play a sample of this voice"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-white/70 transition hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {sampleState === "loading" ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : sampleState === "playing" ? (
-                  <Square size={13} />
-                ) : (
-                  <Play size={15} />
-                )}
-              </button>
-            </div>
-            {voiceSel === CUSTOM_OPT && (
-              <input
-                type="text"
-                value={customVoice}
-                onChange={(e) => setCustomVoice(e.target.value)}
-                placeholder="ElevenLabs voice id"
-                className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none transition focus:border-accent"
-              />
             )}
-            {sampleError && <p className="mt-1.5 text-xs text-red-300">{sampleError}</p>}
           </div>
-        )}
+        </details>
 
         {error && (
-          <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-            {error}
-          </p>
+          <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>
         )}
-
-        {(() => {
-          const est = estimateVideoCost(provider, chosenModel || model, narrate && hasElevenLabs);
-          return (
-            <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-xs text-white/50">
-              <span>Estimated API cost</span>
-              <span className="text-white/70">
-                ~{formatUsd(est.total)}
-                <span className="text-white/40">
-                  {" "}
-                  ({formatUsd(est.model)} {providerLabel(provider)}
-                  {est.narration > 0 ? ` + ${formatUsd(est.narration)} voice` : ""}, rendering free)
-                </span>
-              </span>
-            </div>
-          );
-        })()}
-
-        <button
-          type="submit"
-          disabled={submitting || !canGenerate}
-          className="btn8 w-full justify-center py-3.5"
-        >
-          <Sparkles size={18} />
-          {submitting ? "Starting…" : "Generate video"}
-        </button>
-        <p className="text-center text-xs text-white/40">
-          Rendering runs on your machine and can take a minute or two. You can leave this page.
-          Cost is approximate and depends on your API plan — on OpenRouter it varies a lot by
-          model.
-        </p>
       </form>
+
+      {/* ---- Sticky action bar ---- */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-edge bg-ink/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-3">
+          <div className="min-w-0 text-xs text-white/45">
+            <span className="text-white/75">≈ {formatUsd(est.total)}</span> per video
+            <span className="hidden sm:inline">
+              {" "}· {formatUsd(est.model)} {providerLabel(provider)}
+              {est.narration > 0 ? ` + ${formatUsd(est.narration)} voice` : ""} · rendering is local &amp; free
+            </span>
+          </div>
+          <button
+            type="submit"
+            form="new-video"
+            disabled={submitting || !canGenerate || topic.trim().length < 3}
+            className="btn8 btn8--magenta h-10 px-5"
+          >
+            {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            {submitting ? "Starting…" : "Generate video"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Small preview colors for each video theme (mirrors walkthrough.py palettes). */
+const THEME_SWATCHES: Record<VideoTheme, { bg: string; marks: string[] }> = {
+  "8bit": { bg: "#12142b", marks: ["#00e5ff", "#ffd23f", "#ff5d8f", "#39d98a"] },
+  manuscript: { bg: "#000000", marks: ["#9db4d4", "#d4af37", "#c96a6a", "#7fb069"] },
+  ink: { bg: "#0f1216", marks: ["#82aaff", "#5b7cfa", "#f0709a", "#34d399"] },
+  slate: { bg: "#12161c", marks: ["#7cc4ff", "#22c58b", "#f0709a", "#f4b740"] },
+};
+
+function Segmented({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-edge bg-white/[0.03] p-0.5">
+      {options.map((o) => (
+        <button
+          type="button"
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={`rounded-md px-3 py-1 text-[13px] font-medium transition ${
+            value === o.value ? "bg-white/10 text-white shadow-sm" : "text-white/50 hover:text-white/80"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Tiles({
+  value,
+  onChange,
+  options,
+  cols,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; hint?: string }[];
+  cols: 2 | 3;
+}) {
+  return (
+    <div className={`grid gap-2 ${cols === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <button
+            type="button"
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            title={o.hint}
+            className={`min-w-0 rounded-lg border px-3 py-2 text-left transition ${
+              on ? "border-accent bg-accent/[0.08] ring-2 ring-accent/20" : "border-edge bg-white/[0.02] hover:border-white/25"
+            }`}
+          >
+            <div className={`text-[13px] font-medium ${on ? "text-white" : "text-white/85"}`}>{o.label}</div>
+            {o.hint && <div className="truncate text-[11px] text-white/45">{o.hint}</div>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToggleRow({
+  icon,
+  title,
+  hint,
+  checked,
+  onChange,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 ${checked ? "text-accent" : "text-white/40"}`}>{icon}</span>
+        <div>
+          <div className="text-[14px] font-medium">{title}</div>
+          <div className="text-xs text-white/45">{hint}</div>
+        </div>
+      </div>
+      <Toggle checked={checked} onChange={onChange} disabled={disabled} />
     </div>
   );
 }
