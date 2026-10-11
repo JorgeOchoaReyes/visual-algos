@@ -31,3 +31,5 @@ npm-debug.log*
 # large + platform-specific, produced at package time)
 resources/pyruntime/
 resources/*.tar.gz
+
+__pycache__/
